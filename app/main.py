@@ -10,12 +10,7 @@ Responsibilities:
 import logging
 from contextlib import asynccontextmanager
 
-import boto3
-import httpx
-import psycopg
-from botocore.config import Config
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -64,87 +59,15 @@ app = FastAPI(
 )
 
 # Register routers
+from app.api.routes_approvals import router as approvals_router  # noqa: E402
 from app.api.routes_chat import router as chat_router  # noqa: E402
 from app.api.routes_documents import router as documents_router  # noqa: E402
+from app.api.routes_ops import router as ops_router  # noqa: E402
 
 app.include_router(documents_router)
 app.include_router(chat_router)
-
-
-# ── Health check helpers ──────────────────────────────────────────────────────
-
-
-async def check_postgres() -> bool:
-    """Check connectivity to PostgreSQL."""
-    try:
-        conn = await psycopg.AsyncConnection.connect(
-            settings.database_url.replace("+psycopg", ""),
-            connect_timeout=2,
-        )
-        await conn.execute("SELECT 1")
-        await conn.close()
-        return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Postgres health check failed: %s", exc)
-        return False
-
-
-def check_rustfs() -> bool:
-    """Check connectivity to RustFS."""
-    try:
-        s3 = boto3.client(
-            "s3",
-            endpoint_url=settings.s3_endpoint_url,
-            aws_access_key_id=settings.s3_access_key,
-            aws_secret_access_key=settings.s3_secret_key,
-            config=Config(connect_timeout=2, retries={"max_attempts": 0}),
-        )
-        s3.list_buckets()
-        return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("RustFS health check failed: %s", exc)
-        return False
-
-
-async def check_ollama() -> bool:
-    """Check connectivity to Ollama."""
-    try:
-        async with httpx.AsyncClient(timeout=2) as client:
-            resp = await client.get(f"{settings.ollama_base_url}/api/tags")
-            resp.raise_for_status()
-        return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Ollama health check failed: %s", exc)
-        return False
-
-
-# ── Health endpoint (Phase 0 skeleton) ────────────────────────────────────────
-
-
-@app.get("/api/health", tags=["ops"])
-async def health_check() -> JSONResponse:
-    """Check connectivity to PostgreSQL, RustFS, and Ollama."""
-    pg_ok = await check_postgres()
-    rustfs_ok = check_rustfs()
-    ollama_ok = await check_ollama()
-
-    services: dict[str, str | bool] = {
-        "postgres": "up" if pg_ok else "down",
-        "rustfs": "up" if rustfs_ok else "down",
-        "ollama": "up" if ollama_ok else "down",
-        "langfuse_enabled": settings.langfuse_enabled,
-    }
-
-    all_up = pg_ok and rustfs_ok and ollama_ok
-    overall = "ok" if all_up else "degraded"
-
-    return JSONResponse(
-        content={
-            "status": overall,
-            "services": services,
-        },
-        status_code=200,
-    )
+app.include_router(approvals_router)
+app.include_router(ops_router)
 
 
 # ── Static frontend (Phase 5 will populate frontend/) ─────────────────────────

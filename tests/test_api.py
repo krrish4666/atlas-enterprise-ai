@@ -8,9 +8,9 @@ from fastapi.testclient import TestClient
 def test_health_returns_ok_when_services_up(client: TestClient) -> None:
     """GET /api/health returns status='ok' when all services are healthy."""
     with (
-        patch("app.main.check_postgres", new_callable=AsyncMock) as mock_pg,
-        patch("app.main.check_rustfs") as mock_rustfs,
-        patch("app.main.check_ollama", new_callable=AsyncMock) as mock_ollama,
+        patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock) as mock_pg,
+        patch("app.api.routes_ops.check_rustfs") as mock_rustfs,
+        patch("app.api.routes_ops.check_ollama", new_callable=AsyncMock) as mock_ollama,
     ):
         mock_pg.return_value = True
         mock_rustfs.return_value = True
@@ -30,9 +30,9 @@ def test_health_returns_ok_when_services_up(client: TestClient) -> None:
 def test_health_returns_degraded_when_services_down(client: TestClient) -> None:
     """GET /api/health returns status='degraded' (never 500) when any service fails."""
     with (
-        patch("app.main.check_postgres", new_callable=AsyncMock) as mock_pg,
-        patch("app.main.check_rustfs") as mock_rustfs,
-        patch("app.main.check_ollama", new_callable=AsyncMock) as mock_ollama,
+        patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock) as mock_pg,
+        patch("app.api.routes_ops.check_rustfs") as mock_rustfs,
+        patch("app.api.routes_ops.check_ollama", new_callable=AsyncMock) as mock_ollama,
     ):
         mock_pg.return_value = False
         mock_rustfs.return_value = False
@@ -51,9 +51,9 @@ def test_health_returns_degraded_when_services_down(client: TestClient) -> None:
 def test_health_response_schema_types(client: TestClient) -> None:
     """Validate JSON response schema types."""
     with (
-        patch("app.main.check_postgres", new_callable=AsyncMock) as mock_pg,
-        patch("app.main.check_rustfs") as mock_rustfs,
-        patch("app.main.check_ollama", new_callable=AsyncMock) as mock_ollama,
+        patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock) as mock_pg,
+        patch("app.api.routes_ops.check_rustfs") as mock_rustfs,
+        patch("app.api.routes_ops.check_ollama", new_callable=AsyncMock) as mock_ollama,
     ):
         mock_pg.return_value = True
         mock_rustfs.return_value = True

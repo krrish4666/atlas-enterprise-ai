@@ -102,25 +102,25 @@ This document is the living build tracker for **Atlas Enterprise AI**. AI coding
 
 **Goal:** Add enterprise safety controls, human-in-the-loop review workflows, and operational audit logs.
 
-- [ ] Implement `app/rag/guardrails.py` with deterministic rules:
+- [x] Implement `app/rag/guardrails.py` with deterministic rules:
   - Input checks: prompt-injection patterns, blocked topics, and sensitive/action-like request detection.
   - Output checks: regex-based PII redaction (emails, phone numbers, SSNs, credit cards) replacing matches with `[REDACTED_<TYPE>]`.
   - HITL trigger evaluation: `is_sensitive_action == True` OR `max_similarity_score < HITL_CONFIDENCE_THRESHOLD`.
-- [ ] Upgrade `app/rag/graph.py` to the full state machine:
+- [x] Upgrade `app/rag/graph.py` to the full state machine:
   - `load_memory -> input_guardrail -> (blocked_response | retrieve -> generate -> output_guardrail -> hitl_check -> [queue_hitl]) -> persist_turn`.
-- [ ] Implement `app/api/routes_approvals.py`:
+- [x] Implement `app/api/routes_approvals.py`:
   - `GET /api/approvals?status=pending`
   - `POST /api/approvals/{approval_id}/decision` (enforcing `X-User-Role: reviewer|admin`, updating `hitl_approvals` & `chat_messages`, and logging `hitl_decided`).
-- [ ] Implement `app/api/routes_ops.py`:
+- [x] Implement `app/api/routes_ops.py`:
   - `GET /api/health` (moved/refined here)
   - `GET /api/audit-logs?limit=50&event_type=...`
-- [ ] Add `tests/test_guardrails.py` and `tests/test_rag_graph.py` covering prompt injection blocking, PII redaction, low-confidence HITL queueing, and reviewer approval decisions.
+- [x] Add `tests/test_guardrails.py` and `tests/test_rag_graph.py` covering prompt injection blocking, PII redaction, low-confidence HITL queueing, and reviewer approval decisions.
 
 **Exit Gate:**
-- Prompt injections are blocked and logged in `audit_logs`.
-- Simulated PII in output is redacted before reaching the API response.
-- Low-confidence / sensitive queries return `status: "pending_approval"` and can be approved/edited/rejected via `/api/approvals/{id}/decision`.
-- `ruff check . && ruff format --check . && pytest tests/ -v` passes.
+- [x] Prompt injections are blocked and logged in `audit_logs`.
+- [x] Simulated PII in output is redacted before reaching the API response.
+- [x] Low-confidence / sensitive queries return `status: "pending_approval"` and can be approved/edited/rejected via `/api/approvals/{id}/decision`.
+- [x] `ruff check . && ruff format --check . && pytest tests/ -v` passes.
 
 ---
 

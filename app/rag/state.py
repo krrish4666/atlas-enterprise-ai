@@ -11,6 +11,7 @@ class RAGState(TypedDict, total=False):
 
     session_id: str
     user_query: str
+    sanitized_query: str
     chat_history: list[dict[str, str]]  # list of {"role": "user"|"assistant", "content": str}
     input_blocked: bool
     block_reason: str | None
@@ -21,7 +22,9 @@ class RAGState(TypedDict, total=False):
     citations: list[dict[str, Any]]
     pii_redacted: bool
     requires_hitl: bool
+    hitl_trigger_reason: str | None
     hitl_approval_id: str | None
+    status: str
     final_response: str
     user_message_id: str | None
     assistant_message_id: str | None

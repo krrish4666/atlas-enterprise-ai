@@ -94,6 +94,13 @@ START
 END
 ```
 
+#### Flow B Addendum: Gemini Free Tier Compatibility & Context Optimization Strategy
+To ensure consistent sub-4s response latency and prevent `504 Deadline Exceeded` timeouts on the Google Gemini Free Tier (`gemini-3.5-flash-lite`, 5 RPM limit), the generation node and state machine adhere to the following deterministic optimizations:
+1. **Bounded Retrieval Top-K (`RETRIEVAL_TOP_K=3`):** Reduces chunk volume from 5 to 3 chunks per query, selecting the highest-scoring vector matches.
+2. **Configurable Snippet Truncation (`MAX_CHUNK_CHARS=450`):** In `format_retrieved_context`, chunk text snippets are bounded to `settings.max_chunk_chars` on word boundaries to eliminate prompt context bloat while preserving factual grounding and citations.
+3. **Compact Active Memory Window:** In `load_memory_node` and `generate_answer`, active conversation history passed to the LLM is constrained to the most recent turn (last 2 messages), with prior assistant answers truncated to 250 characters. Full history remains saved in PostgreSQL `chat_messages`.
+4. **Client-Side Timeout and Retries:** `ChatGoogleGenerativeAI` is instantiated with `timeout=120.0` and `max_retries=3` with exponential backoff.
+
 #### LangGraph State Contract (`RAGState`)
 - `session_id: str`
 - `user_query: str`

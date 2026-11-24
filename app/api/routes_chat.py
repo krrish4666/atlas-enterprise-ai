@@ -147,7 +147,7 @@ async def post_chat(
     return ChatResponse(
         session_id=req.session_id,
         message_id=assistant_id,
-        status="completed",
+        status=final_state.get("status", "completed"),
         answer=final_state.get("final_response", ""),
         citations=[CitationItem(**c) for c in citations_data],
         pii_redacted=final_state.get("pii_redacted", False),

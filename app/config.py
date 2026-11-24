@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     # ── RAG / Guardrail Thresholds ─────────────────────────────────────────────
     retrieval_top_k: int = 3
     hitl_confidence_threshold: float = 0.40
+    max_chunk_chars: int = 450
 
 
 # Single shared instance imported throughout the app

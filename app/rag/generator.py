@@ -42,13 +42,14 @@ def format_retrieved_context(chunks: list[dict[str, Any]]) -> str:
         return "No relevant documents found."
 
     blocks: list[str] = []
+    max_chars = settings.max_chunk_chars
     for idx, c in enumerate(chunks[:3], start=1):
         filename = c.get("filename", "unknown")
         meta = c.get("metadata") or {}
         page = meta.get("page", 1)
         raw_content = (c.get("content") or "").strip()
-        if len(raw_content) > 450:
-            content = raw_content[:450].rsplit(" ", 1)[0] + "..."
+        if len(raw_content) > max_chars:
+            content = raw_content[:max_chars].rsplit(" ", 1)[0] + "..."
         else:
             content = raw_content
         blocks.append(f"[{idx}] (Document: {filename}, Page: {page}):\n{content}")
