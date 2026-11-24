@@ -6,8 +6,8 @@ This document is the living build tracker for **Atlas Enterprise AI**. AI coding
 
 ## Current Status
 
-- **Active Phase:** Phase 3 Complete (Awaiting user command to proceed to Phase 4)
-- **Last Completed Milestone:** Phase 3 — Core RAG Engine, Memory & Langfuse Tracing (LangGraph state machine, pgvector cosine retrieval, multi-turn session memory, feedback & live stack verified)
+- **Active Phase:** Phase 5 Complete (Ready for Phase 6: End-to-End Tests, CI/CD & Documentation Polish)
+- **Last Completed Milestone:** Phase 5 — Lightweight Web Dashboard (Vanilla HTML/CSS/JS single-page workspace with Chat, Documents, Approvals, and Operations & Audits views verified on live Docker stack)
 - **Blockers / Notes:** None
 
 ---
@@ -128,16 +128,16 @@ This document is the living build tracker for **Atlas Enterprise AI**. AI coding
 
 **Goal:** Build the single-page enterprise dashboard served directly by FastAPI with zero frontend build tools.
 
-- [ ] Mount `frontend/` static files in `app/main.py` at `/`.
-- [ ] Build `frontend/index.html` and `frontend/styles.css` with a clean, responsive layout and top navigation tabs:
+- [x] Mount `frontend/` static files in `app/main.py` at `/`.
+- [x] Build `frontend/index.html` and `frontend/styles.css` with a clean, responsive layout and top navigation tabs:
   - **Chat** (session sidebar, message thread, expandable citation badges, thumbs-up/down feedback, pending-approval badge)
   - **Documents** (file picker, upload progress bar via direct PUT to RustFS presigned URL, status polling, atomic delete button)
   - **Approvals (HITL)** (role selector `Employee` / `Reviewer`, pending queue cards with draft answer + sources, Approve / Edit & Approve / Reject controls)
   - **Operations & Audits** (live service health pills + filterable audit log table + link to Langfuse UI)
-- [ ] Build `frontend/app.js` connecting all views cleanly to the contracts in `docs/SCHEMA_AND_API.md`.
+- [x] Build `frontend/app.js` connecting all views cleanly to the contracts in `docs/SCHEMA_AND_API.md`.
 
 **Exit Gate:**
-- Every user flow in `docs/SCOPE.md` (Section 6: Acceptance Criteria #1–#7) works interactively through `http://localhost:8000` with zero browser console errors.
+- [x] Every user flow in `docs/SCOPE.md` (Section 6: Acceptance Criteria #1–#7) works interactively through `http://localhost:8000` with zero browser console errors.
 
 ---
 

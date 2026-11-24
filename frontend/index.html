@@ -7,12 +7,474 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="placeholder">
-    <h1>🚀 Atlas Enterprise AI</h1>
-    <p>Frontend dashboard — coming in Phase 5.</p>
-    <p>API is live at <a href="/api/health">/api/health</a></p>
-  </div>
+  <!-- Global Persistent Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand">
+        <span class="brand-logo">ATLAS</span>
+        <span class="brand-divider">/</span>
+        <span class="brand-title">Enterprise AI</span>
+      </div>
+      <div class="header-health" id="header-health" title="System operational status">
+        <span class="status-dot dot-emerald" id="header-health-dot"></span>
+        <span class="health-label" id="header-health-label">System Ready</span>
+      </div>
+    </div>
+
+    <!-- 4 Navigation Tabs -->
+    <nav class="nav-tabs" role="tablist" aria-label="Main Navigation">
+      <button class="tab-btn active" data-view="chat" id="tab-chat" role="tab" aria-selected="true" aria-controls="view-chat">
+        <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <path d="M2.5 4A1.5 1.5 0 0 1 4 2.5h8A1.5 1.5 0 0 1 13.5 4v6a1.5 1.5 0 0 1-1.5 1.5H5.5L2.5 14V4z"/>
+        </svg>
+        <span>Chat</span>
+      </button>
+
+      <button class="tab-btn" data-view="documents" id="tab-documents" role="tab" aria-selected="false" aria-controls="view-documents">
+        <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <path d="M3.5 2.5h6l3.5 3.5V13.5a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/>
+          <path d="M9.5 2.5V6H13"/>
+        </svg>
+        <span>Documents</span>
+      </button>
+
+      <button class="tab-btn" data-view="approvals" id="tab-approvals" role="tab" aria-selected="false" aria-controls="view-approvals">
+        <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="5.5"/>
+          <path d="M6 8l1.5 1.5L10.5 6"/>
+        </svg>
+        <span>Approvals</span>
+        <span class="badge" id="approvals-badge">0</span>
+      </button>
+
+      <button class="tab-btn" data-view="ops" id="tab-ops" role="tab" aria-selected="false" aria-controls="view-ops">
+        <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/>
+          <path d="M5.5 8h5M8 5.5v5"/>
+        </svg>
+        <span>Operations &amp; Audits</span>
+      </button>
+    </nav>
+
+    <!-- Role Selector Dropdown -->
+    <div class="header-right">
+      <div class="role-control">
+        <label for="role-selector" class="role-label">Role</label>
+        <select id="role-selector" class="role-select" aria-label="Select User Role">
+          <option value="employee">Employee</option>
+          <option value="reviewer">Reviewer</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- App Content Shell (Views) -->
+  <main id="app-content" class="app-content">
+    <!-- View 1: Chat -->
+    <section id="view-chat" class="view active" role="tabpanel" aria-labelledby="tab-chat">
+      <div class="chat-layout" id="chat-layout">
+        <!-- 1. Collapsible Left Session Sidebar -->
+        <aside class="chat-sidebar" id="chat-sidebar">
+          <div class="sidebar-header">
+            <button id="btn-new-chat" class="btn btn-primary-chat" title="Start a new chat session">
+              <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                <path d="M8 3.5v9M3.5 8h9"/>
+              </svg>
+              <span>New Chat</span>
+            </button>
+            <button id="btn-toggle-sidebar" class="btn-icon-subtle" title="Collapse sidebar">
+              <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                <path d="M11.5 3.5L7 8l4.5 4.5M4.5 3.5v9"/>
+              </svg>
+            </button>
+          </div>
+          <div class="sidebar-sessions-header">
+            <span class="sidebar-subtitle">Conversations</span>
+            <span class="session-count-badge font-mono tabular-nums" id="session-count-badge">0</span>
+          </div>
+          <div class="sidebar-sessions-list" id="chat-sessions-list">
+            <div class="sessions-loading">Loading sessions…</div>
+          </div>
+        </aside>
+
+        <!-- 2. Center Conversation Canvas (~768px) -->
+        <div class="chat-main-wrap">
+          <!-- Floating sidebar expand button when collapsed -->
+          <button id="btn-expand-sidebar" class="btn-floating-expand" title="Expand session sidebar" style="display: none;">
+            <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+              <path d="M4.5 3.5L9 8l-4.5 4.5M11.5 3.5v9"/>
+            </svg>
+            <span>Sessions</span>
+          </button>
+
+          <div class="chat-canvas">
+            <!-- Messages Scroll Area -->
+            <div class="chat-messages" id="chat-messages">
+              <!-- Empty State / Welcome greeting -->
+              <div class="chat-empty-state" id="chat-empty-state">
+                <div class="empty-icon-wrap">
+                  <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <h3>Enterprise Document Assistant</h3>
+                <p>Ask questions grounded directly in your uploaded organizational policies, manuals, and reports.</p>
+                <div class="chat-suggestions">
+                  <button class="suggestion-chip" data-query="What documents are currently indexed?">"What documents are currently indexed?"</button>
+                  <button class="suggestion-chip" data-query="Summarize our key employee policies.">"Summarize our key employee policies."</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Composer / Input Area -->
+            <div class="chat-composer-wrap">
+              <form id="chat-form" class="chat-form">
+                <div class="composer-container">
+                  <textarea
+                    id="chat-input"
+                    class="composer-textarea"
+                    placeholder="Ask a question about your documents… (Enter to send, Shift+Enter for newline)"
+                    rows="1"
+                    aria-label="Chat message input"
+                  ></textarea>
+                  <button type="submit" id="chat-send-btn" class="composer-send-btn" title="Send message" disabled>
+                    <svg class="send-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                      <path d="M2.5 8h10M8.5 4l4 4-4 4"/>
+                    </svg>
+                  </button>
+                </div>
+              </form>
+              <div class="composer-footer">
+                <span class="composer-hint">Grounded Q&amp;A · Verified citations · Deterministic safety guardrails</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Right-hand Source Inspector Drawer -->
+        <aside class="source-inspector" id="source-inspector" style="display: none;">
+          <div class="inspector-header">
+            <div class="inspector-title-group">
+              <svg class="inspector-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                <path d="M3.5 2.5h6l3.5 3.5V13.5a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/>
+                <path d="M9.5 2.5V6H13"/>
+              </svg>
+              <h4>Source Inspector</h4>
+            </div>
+            <button id="btn-close-inspector" class="btn-icon-subtle" title="Close Source Inspector">
+              <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                <path d="M4 4l8 8M12 4L4 12"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="inspector-content" id="inspector-content">
+            <!-- Populated dynamically when clicking citation badges -->
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- View 2: Documents -->
+    <section id="view-documents" class="view" role="tabpanel" aria-labelledby="tab-documents">
+      <div class="docs-container">
+        <!-- Top Controls / Section Header -->
+        <div class="docs-header">
+          <div>
+            <h2>Document Management</h2>
+            <p class="docs-desc">Direct-to-storage presigned upload to RustFS, chunking, and pgvector embeddings.</p>
+          </div>
+          <div class="docs-actions">
+            <button id="refresh-docs-btn" class="btn btn-secondary" title="Refresh document list">
+              <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9L14 2"/>
+                <path d="M14 6V2h-4"/>
+              </svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Direct-to-Storage Presigned Upload Zone -->
+        <div class="upload-section">
+          <input type="file" id="doc-file-input" accept=".pdf,.txt,.md,.docx" style="display: none;" />
+          <div class="upload-dropzone" id="upload-dropzone" tabindex="0" role="button" aria-label="Upload document dropzone">
+            <div class="dropzone-content">
+              <div class="dropzone-icon-wrap">
+                <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M12 16V4m0 0l-4 4m4-4l4 4M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="dropzone-text">
+                <span class="dropzone-prompt">Choose a file or drag &amp; drop it here</span>
+                <span class="dropzone-sub">Supported formats: PDF, TXT, MD, DOCX (up to 50MB)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Upload Progress & Status Bar -->
+          <div class="upload-progress-card" id="upload-progress-card" style="display: none;">
+            <div class="upload-progress-header">
+              <div class="upload-file-info">
+                <svg class="file-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                  <path d="M3.5 2.5h6l3.5 3.5V13.5a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/>
+                  <path d="M9.5 2.5V6H13"/>
+                </svg>
+                <span class="upload-filename" id="upload-filename">document.pdf</span>
+                <span class="upload-size font-mono tabular-nums" id="upload-filesize">0 KB</span>
+              </div>
+              <div class="upload-status-badge">
+                <span class="upload-status-text" id="upload-status-text">Uploading to RustFS…</span>
+                <span class="upload-percent font-mono tabular-nums" id="upload-percent">0%</span>
+              </div>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="upload-progress-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Document Inventory Table -->
+        <div class="docs-inventory-section">
+          <div class="inventory-header">
+            <div class="inventory-title-group">
+              <h3>Indexed Documents</h3>
+              <span class="badge" id="docs-count-badge">0</span>
+            </div>
+            <span class="inventory-note">Vectors stored in PostgreSQL (768-dim) · Raw bytes in RustFS</span>
+          </div>
+
+          <div class="table-container">
+            <table class="docs-table">
+              <thead>
+                <tr>
+                  <th>Filename</th>
+                  <th style="width: 100px;">Size</th>
+                  <th style="width: 140px;">Status</th>
+                  <th style="width: 90px;">Chunks</th>
+                  <th style="width: 160px;">Uploaded</th>
+                  <th style="width: 120px; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="docs-table-body">
+                <tr>
+                  <td colspan="6" class="table-loading">Loading documents…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 3: Approvals -->
+    <section id="view-approvals" class="view" role="tabpanel" aria-labelledby="tab-approvals">
+      <div class="approvals-container">
+        <!-- Top Controls / Section Header -->
+        <div class="approvals-header">
+          <div>
+            <h2>Human-in-the-Loop (HITL) Approvals</h2>
+            <p class="approvals-desc">Review low-confidence queries and sensitive action requests flagged by guardrails before release.</p>
+          </div>
+          <div class="approvals-actions">
+            <button id="refresh-approvals-btn" class="btn btn-secondary" title="Refresh approval tickets">
+              <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9L14 2"/>
+                <path d="M14 6V2h-4"/>
+              </svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Role Restriction Notice (Calm notice when role is employee) -->
+        <div class="role-warning-banner" id="approval-role-notice" style="display: none;">
+          <svg class="banner-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+            <circle cx="8" cy="8" r="6"/>
+            <path d="M8 5v3.5M8 11h.01"/>
+          </svg>
+          <div>
+            <strong>Read-Only Mode:</strong> You are currently viewing as <code>Employee</code>. Switch to <code>Reviewer</code> or <code>Admin</code> role in the top header to submit approval decisions.
+          </div>
+        </div>
+
+        <!-- Status Filter Tabs -->
+        <div class="approvals-filters-bar">
+          <div class="filter-tab-group" role="tablist" aria-label="Approvals Status Filter">
+            <button class="filter-tab-btn active" data-status="pending">
+              <span>Pending Review</span>
+              <span class="badge" id="pending-tab-badge">0</span>
+            </button>
+            <button class="filter-tab-btn" data-status="approved">
+              <span>Approved</span>
+            </button>
+            <button class="filter-tab-btn" data-status="edited_and_approved">
+              <span>Edited &amp; Approved</span>
+            </button>
+            <button class="filter-tab-btn" data-status="rejected">
+              <span>Rejected</span>
+            </button>
+            <button class="filter-tab-btn" data-status="all">
+              <span>All Tickets</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Approval Tickets Queue Container -->
+        <div class="approvals-queue" id="approvals-queue">
+          <div class="table-loading">Loading approval queue…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 4: Operations & Audits -->
+    <section id="view-ops" class="view" role="tabpanel" aria-labelledby="tab-ops">
+      <div class="ops-container">
+        <!-- Top Controls / Section Header -->
+        <div class="ops-header">
+          <div>
+            <h2>Operations &amp; Audits</h2>
+            <p class="ops-desc">Live infrastructure health checks, Langfuse observability links, and immutable audit logs.</p>
+          </div>
+          <div class="ops-actions">
+            <button id="refresh-ops-btn" class="btn btn-secondary" title="Refresh health and audit logs">
+              <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9L14 2"/>
+                <path d="M14 6V2h-4"/>
+              </svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. Service Health Grid (4 compact cards in a single row) -->
+        <div class="health-grid">
+          <!-- Card 1: Postgres -->
+          <div class="health-card" id="card-postgres">
+            <div class="health-card-header">
+              <span class="service-name">PostgreSQL 16</span>
+              <span class="service-pill pill-neutral" id="status-postgres">
+                <span class="status-dot dot-neutral"></span>
+                <span class="status-text">Checking…</span>
+              </span>
+            </div>
+            <div class="service-meta">
+              <span>pgvector (768-dim)</span>
+              <span class="meta-endpoint">:5432</span>
+            </div>
+          </div>
+
+          <!-- Card 2: RustFS -->
+          <div class="health-card" id="card-rustfs">
+            <div class="health-card-header">
+              <span class="service-name">RustFS Storage</span>
+              <span class="service-pill pill-neutral" id="status-rustfs">
+                <span class="status-dot dot-neutral"></span>
+                <span class="status-text">Checking…</span>
+              </span>
+            </div>
+            <div class="service-meta">
+              <span>S3-Compatible</span>
+              <span class="meta-endpoint">:9000 / :9001</span>
+            </div>
+          </div>
+
+          <!-- Card 3: Ollama -->
+          <div class="health-card" id="card-ollama">
+            <div class="health-card-header">
+              <span class="service-name">Host Ollama</span>
+              <span class="service-pill pill-neutral" id="status-ollama">
+                <span class="status-dot dot-neutral"></span>
+                <span class="status-text">Checking…</span>
+              </span>
+            </div>
+            <div class="service-meta">
+              <span>nomic-embed-text</span>
+              <span class="meta-endpoint">:11434</span>
+            </div>
+          </div>
+
+          <!-- Card 4: Langfuse -->
+          <div class="health-card" id="card-langfuse">
+            <div class="health-card-header">
+              <span class="service-name">Langfuse Tracing</span>
+              <span class="service-pill pill-neutral" id="status-langfuse">
+                <span class="status-dot dot-neutral"></span>
+                <span class="status-text">Checking…</span>
+              </span>
+            </div>
+            <div class="service-meta">
+              <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="external-link" title="Open Langfuse Tracing Dashboard">
+                <span>UI :3000</span>
+                <svg class="external-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor">
+                  <path d="M3.5 2.5h6v6M9.5 2.5l-6 6"/>
+                </svg>
+              </a>
+              <span class="meta-endpoint">v2 Self-Hosted</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Audit Trail Section -->
+        <div class="audit-section">
+          <div class="audit-header">
+            <div>
+              <h3>Audit Trail</h3>
+              <p class="audit-subtitle">Immutable log of document operations, RAG queries, guardrail intercepts, and HITL decisions.</p>
+            </div>
+            <div class="audit-filters">
+              <div class="filter-group">
+                <label for="audit-event-filter" class="filter-label">Event</label>
+                <select id="audit-event-filter" class="form-select">
+                  <option value="all">All Events</option>
+                  <option value="document_upload_requested">document_upload_requested</option>
+                  <option value="document_indexed">document_indexed</option>
+                  <option value="document_deleted">document_deleted</option>
+                  <option value="chat_completed">chat_completed</option>
+                  <option value="guardrail_blocked">guardrail_blocked</option>
+                  <option value="pii_redacted">pii_redacted</option>
+                  <option value="hitl_queued">hitl_queued</option>
+                  <option value="hitl_decided">hitl_decided</option>
+                  <option value="feedback_submitted">feedback_submitted</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="audit-limit-filter" class="filter-label">Limit</label>
+                <select id="audit-limit-filter" class="form-select">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Audit Table -->
+          <div class="table-container">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th style="width: 170px;">Timestamp</th>
+                  <th style="width: 210px;">Event Type</th>
+                  <th style="width: 100px;">Actor</th>
+                  <th style="width: 170px;">Resource ID</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table-body">
+                <tr>
+                  <td colspan="5" class="table-loading">Loading audit records…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
   <script src="/app.js"></script>
 </body>
 </html>
-
