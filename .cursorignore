@@ -1,0 +1,16 @@
+# Never index the reference implementation
+_reference/
+
+# Virtual environment
+.venv/
+venv/
+
+# Build artefacts
+__pycache__/
+*.pyc
+dist/
+build/
+
+# Secrets
+.env
+

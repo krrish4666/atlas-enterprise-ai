@@ -1,0 +1,129 @@
+# ── Atlas Enterprise AI — Docker Compose Stack ────────────────────────────────
+# 4 locked services on a shared bridge network (atlas-net).
+# Ollama runs natively on the host OS (CPU-only optimization; do NOT containerize Ollama).
+# Run from repo root: docker compose up -d --build
+# Stop:              docker compose down
+# Logs:              docker compose logs -f api
+
+name: atlas-enterprise-ai
+
+networks:
+  atlas-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  rustfs_data:
+
+services:
+
+  # ── PostgreSQL 16 + pgvector ────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: atlas-postgres
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-atlas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlaspassword}
+      POSTGRES_DB: ${POSTGRES_DB:-atlas}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Init script: creates both atlas and langfuse databases
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atlas} -d ${POSTGRES_DB:-atlas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── RustFS (S3-compatible object storage) ───────────────────────────────────
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: atlas-rustfs
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Langfuse v2 (self-hosted observability) ─────────────────────────────────
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: atlas-langfuse
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:-langfusepassword}@postgres:5432/${LANGFUSE_DB_NAME:-langfuse}
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me-in-production}
+      SALT: ${LANGFUSE_SALT:-change-me-in-production-salt}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Atlas API (FastAPI + LangGraph) ─────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlas-api
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app:ro
+      - ./frontend:/app/frontend:ro
+    env_file:
+      - .env
+    environment:
+      # Override endpoints to use Docker service names internally
+      S3_ENDPOINT_URL: http://rustfs:9000
+      # Connect to host-native Ollama via host.docker.internal
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LANGFUSE_HOST: http://langfuse:3000
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-atlas}:${POSTGRES_PASSWORD:-atlaspassword}@postgres:5432/${POSTGRES_DB:-atlas}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+
