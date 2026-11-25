@@ -10,6 +10,7 @@ Maintains two boto3 S3 clients:
 import io
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import boto3
 from botocore.config import Config
@@ -88,16 +89,21 @@ class S3Storage:
                 raise
 
     def configure_bucket_cors(self) -> None:
-        """Apply CORS policy allowing PUT and OPTIONS from browser origins."""
+        """Apply CORS policy allowing PUT and OPTIONS from configured browser origins."""
+        origins: list[str] = [o.strip() for o in settings.s3_cors_origins.split(",") if o.strip()]
+        # Include scheme://netloc from public_endpoint (e.g. https://atlas.example.com)
+        parsed = urlparse(self.public_endpoint)
+        if parsed.scheme and parsed.netloc:
+            pub_origin = f"{parsed.scheme}://{parsed.netloc}"
+            if pub_origin not in origins:
+                origins.append(pub_origin)
+
         cors_configuration = {
             "CORSRules": [
                 {
                     "AllowedHeaders": ["*"],
                     "AllowedMethods": ["PUT", "OPTIONS", "GET", "HEAD"],
-                    "AllowedOrigins": [
-                        "http://localhost:8000",
-                        "http://127.0.0.1:8000",
-                    ],
+                    "AllowedOrigins": origins,
                     "MaxAgeSeconds": 3000,
                 }
             ]

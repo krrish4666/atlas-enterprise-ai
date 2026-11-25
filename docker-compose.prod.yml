@@ -1,0 +1,145 @@
+# ── Atlas Enterprise AI — Production Docker Compose (Azure Ubuntu VM) ─────────
+# Pulls pre-built API image from ghcr.io instead of building locally.
+# Ollama runs natively on the Ubuntu VM host (http://host.docker.internal:11434).
+# Caddy handles ports 80/443 with automatic HTTPS and proxies RustFS presigned URLs.
+
+name: atlas-enterprise-ai
+
+networks:
+  atlas-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  rustfs_data:
+  caddy_data:
+  caddy_config:
+
+services:
+
+  # ── PostgreSQL 16 + pgvector ────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: atlas-postgres
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-atlas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlaspassword}
+      POSTGRES_DB: ${POSTGRES_DB:-atlas}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atlas} -d ${POSTGRES_DB:-atlas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── RustFS (S3-compatible object storage) ───────────────────────────────────
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: atlas-rustfs
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Langfuse v2 (self-hosted observability) ─────────────────────────────────
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: atlas-langfuse
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:-langfusepassword}@postgres:5432/${LANGFUSE_DB_NAME:-langfuse}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me-in-production}
+      SALT: ${LANGFUSE_SALT:-change-me-in-production-salt}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Atlas API (FastAPI + LangGraph from ghcr.io) ────────────────────────────
+  # NOTE: GITHUB_REPOSITORY MUST be lowercase (e.g. myorg/atlas); Docker rejects uppercase tags.
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/atlas-enterprise-ai}:latest
+    container_name: atlas-api
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      S3_ENDPOINT_URL: http://rustfs:9000
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LANGFUSE_HOST: http://langfuse:3000
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-atlas}:${POSTGRES_PASSWORD:-atlaspassword}@postgres:5432/${POSTGRES_DB:-atlas}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Caddy (Automatic HTTPS & Reverse Proxy for API + RustFS) ───────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: atlas-caddy
+    restart: unless-stopped
+    networks:
+      - atlas-net
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ATLAS_DOMAIN: ${ATLAS_DOMAIN:-:80}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-atlas-docs}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      rustfs:
+        condition: service_started

@@ -62,12 +62,19 @@ app = FastAPI(
 from app.api.routes_approvals import router as approvals_router  # noqa: E402
 from app.api.routes_chat import router as chat_router  # noqa: E402
 from app.api.routes_documents import router as documents_router  # noqa: E402
+from app.api.routes_ops import HealthResponse, health_check  # noqa: E402
 from app.api.routes_ops import router as ops_router  # noqa: E402
 
 app.include_router(documents_router)
 app.include_router(chat_router)
 app.include_router(approvals_router)
 app.include_router(ops_router)
+
+
+@app.get("/health", response_model=HealthResponse, tags=["ops"], summary="Root healthcheck alias")
+async def root_health_check() -> HealthResponse:
+    """Expose root /health endpoint for container healthchecks alongside /api/health."""
+    return await health_check()
 
 
 # ── Static frontend (Phase 5 will populate frontend/) ─────────────────────────

@@ -18,9 +18,11 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # ─── Stage 2: production image ────────────────────────────────────────────────
 FROM python:3.12-slim AS final
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 LABEL org.opencontainers.image.title="Atlas Enterprise AI" \
-      org.opencontainers.image.description="Zero-cost self-hosted Enterprise RAG assistant" \
-      org.opencontainers.image.source="https://github.com/YOUR_ORG/atlas-enterprise-ai"
+      org.opencontainers.image.description="Zero-cost self-hosted Enterprise RAG assistant"
 
 # Non-root user for security
 RUN addgroup --system atlas && adduser --system --ingroup atlas atlas
@@ -41,6 +43,8 @@ USER atlas
 
 EXPOSE 8000
 
-# Uvicorn: 1 worker for MVP (single-container); increase via env var in prod.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
 
+# Uvicorn behind reverse proxy (Caddy): honor forwarded headers for per-IP rate limiting
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

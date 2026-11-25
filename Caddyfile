@@ -1,0 +1,20 @@
+# ── Atlas Enterprise AI — Caddy Reverse Proxy ─────────────────────────────────
+# Set ATLAS_DOMAIN in .env (e.g. atlas.yourdomain.com) for automatic HTTPS via Let's Encrypt.
+# If ATLAS_DOMAIN is unset, Caddy listens on :80 over HTTP.
+
+{$ATLAS_DOMAIN::80} {
+	# Route direct presigned RustFS bucket PUT/GET URLs (preserves SigV4 Host & path)
+	handle /{$S3_BUCKET_NAME:atlas-docs}/* {
+		reverse_proxy rustfs:9000
+	}
+
+	# Proxy /s3/* requests cleanly to RustFS
+	handle_path /s3/* {
+		reverse_proxy rustfs:9000
+	}
+
+	# Route all UI and API traffic to FastAPI
+	handle {
+		reverse_proxy api:8000
+	}
+}

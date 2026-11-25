@@ -6,8 +6,8 @@ This document is the living build tracker for **Atlas Enterprise AI**. AI coding
 
 ## Current Status
 
-- **Active Phase:** Phase 5 Complete (Ready for Phase 6: End-to-End Tests, CI/CD & Documentation Polish)
-- **Last Completed Milestone:** Phase 5 — Lightweight Web Dashboard (Vanilla HTML/CSS/JS single-page workspace with Chat, Documents, Approvals, and Operations & Audits views verified on live Docker stack)
+- **Active Phase:** Phase 6 Complete (All MVP Phases Complete — Ready for Production Deployment)
+- **Last Completed Milestone:** Phase 6 — End-to-End Tests, CI/CD (`ghcr.io`), Production Compose with Caddy HTTPS, IP Rate Limiting, VM Bootstrap Script, and Deployment Documentation
 - **Blockers / Notes:** None
 
 ---
@@ -141,17 +141,19 @@ This document is the living build tracker for **Atlas Enterprise AI**. AI coding
 
 ---
 
-## Phase 6: End-to-End Tests, CI/CD (`ghcr.io`) & Documentation Polish
+## Phase 6: End-to-End Tests, CI/CD (`ghcr.io`) & Production Deployment
 
-**Goal:** Automate testing and Docker image publishing to GitHub Container Registry.
+**Goal:** Automate testing, harden Docker packaging, add production HTTPS reverse proxy + IP rate limiting, and publish/deploy to an Azure Ubuntu VM via GitHub Container Registry.
 
-- [ ] Complete `tests/test_api.py` covering all FastAPI endpoints, error cases (`400`, `403`, `404`), and role enforcement.
-- [ ] Create `.github/workflows/ci-cd.yml`:
-  - On PR & push to `main`: run `ruff check .`, `ruff format --check .`, and `pytest tests/ -v`.
-  - On push to `main`: build `Dockerfile` and push `latest` and `sha-<short>` tags to `ghcr.io/<owner>/atlas-enterprise-ai` using `GITHUB_TOKEN`.
-- [ ] Write a concise root `README.md` with quickstart instructions (`cp .env.example .env`, `docker compose up -d --build`, `ollama pull nomic-embed-text`).
-- [ ] Verify all 8 Acceptance Criteria in `docs/SCOPE.md`.
+- [x] Harden `Dockerfile` (`python:3.12-slim` multi-stage build, non-root `atlas` user, `HEALTHCHECK` hitting `/health`, proxy headers enabled) and expose `GET /health` alias in `app/main.py`.
+- [x] Create `docker-compose.prod.yml` pulling `ghcr.io/${GITHUB_REPOSITORY}:latest`, keeping `host.docker.internal:host-gateway` for native host Ollama, `restart: unless-stopped` on all services, and `caddy:2-alpine` (`Caddyfile`) for automatic HTTPS + RustFS presigned upload proxying.
+- [x] Add lightweight per-IP sliding-window rate limiting on `POST /api/chat` (`app/api/rate_limit.py`, configurable via `CHAT_RATE_LIMIT_PER_MINUTE`, default `20`).
+- [x] Complete `tests/test_api.py` covering `/health`, `/api/health`, `/api/chat` rate limiting (`429`), error cases (`400`, `403`, `404`), audit log filtering, and role enforcement.
+- [x] Create `.github/workflows/ci-cd.yml` (`verify` -> `publish` to `ghcr.io` -> `deploy` to Azure Ubuntu VM via `appleboy/ssh-action`).
+- [x] Create `scripts/setup_vm.sh` for Ubuntu 24.04 (Docker, Docker Compose v2, native Ollama with `OLLAMA_HOST=0.0.0.0:11434`, and `ollama pull nomic-embed-text`).
+- [x] Write root `README.md` with local quickstart, Azure VM deployment steps, and required GitHub Secrets (`AZURE_VM_HOST`, `AZURE_VM_USER`, `AZURE_VM_SSH_KEY`).
+- [x] Verify all 8 Acceptance Criteria in `docs/SCOPE.md`.
 
 **Exit Gate:**
-- Full test suite passes locally and in GitHub Actions.
-- Docker image successfully publishes to `ghcr.io`.
+- [x] Full test suite and `ruff` lint/format checks pass locally (`ruff check . && ruff format --check . && pytest tests/ -v`).
+- [ ] Pushing to `main`/`master` triggers GitHub Actions CI/CD to verify, publish to `ghcr.io`, and deploy when `AZURE_VM_HOST` is configured.

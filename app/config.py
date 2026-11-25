@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     s3_access_key: str = "minioadmin"
     s3_secret_key: str = "minioadmin"
     s3_bucket_name: str = "atlas-docs"
+    s3_cors_origins: str = "http://localhost:8000,http://127.0.0.1:8000"
 
     # ── Ollama (Local Embeddings) ──────────────────────────────────────────────
     ollama_base_url: str = "http://ollama:11434"
@@ -54,6 +55,9 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 3
     hitl_confidence_threshold: float = 0.40
     max_chunk_chars: int = 450
+
+    # ── Demo / API Rate Limiting ───────────────────────────────────────────────
+    chat_rate_limit_per_minute: int = 20
 
 
 # Single shared instance imported throughout the app

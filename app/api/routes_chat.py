@@ -17,6 +17,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.api.rate_limit import enforce_chat_rate_limit
 from app.db.models import AuditLog, ChatMessage, Feedback, HITLApproval
 from app.db.session import get_db
 from app.rag.graph import run_rag_pipeline
@@ -125,6 +126,7 @@ class FeedbackResponse(BaseModel):
     "",
     response_model=ChatResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(enforce_chat_rate_limit)],
     summary="Execute grounded RAG chat query",
 )
 async def post_chat(
