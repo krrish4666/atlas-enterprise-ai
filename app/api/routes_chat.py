@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.db.models import AuditLog, ChatMessage, Feedback
 from app.db.session import get_db
@@ -62,6 +63,7 @@ class SessionSummary(BaseModel):
     """Summary of a conversation session."""
 
     session_id: str
+    title: str | None = None
     last_message: str
     message_count: int
     updated_at: datetime
@@ -165,29 +167,38 @@ async def list_chat_sessions(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SessionListResponse:
     """Aggregate distinct sessions ordered by most recent message."""
-    # Subquery: aggregate count and latest created_at per session
+    # Subquery: aggregate count, first created, and latest created_at per session
     subq = (
         select(
             ChatMessage.session_id,
             func.count(ChatMessage.id).label("message_count"),
+            func.min(ChatMessage.created_at).label("first_created"),
             func.max(ChatMessage.created_at).label("latest_created"),
         )
         .group_by(ChatMessage.session_id)
         .subquery()
     )
 
-    # Join back to get the content of the latest message in each session
+    first_msg = aliased(ChatMessage)
+    last_msg = aliased(ChatMessage)
+
     stmt = (
         select(
             subq.c.session_id,
             subq.c.message_count,
             subq.c.latest_created,
-            ChatMessage.content.label("last_message"),
+            last_msg.content.label("last_message"),
+            first_msg.content.label("title"),
         )
-        .join(
-            ChatMessage,
-            (ChatMessage.session_id == subq.c.session_id)
-            & (ChatMessage.created_at == subq.c.latest_created),
+        .outerjoin(
+            last_msg,
+            (last_msg.session_id == subq.c.session_id)
+            & (last_msg.created_at == subq.c.latest_created),
+        )
+        .outerjoin(
+            first_msg,
+            (first_msg.session_id == subq.c.session_id)
+            & (first_msg.created_at == subq.c.first_created),
         )
         .order_by(desc(subq.c.latest_created))
     )
@@ -198,14 +209,30 @@ async def list_chat_sessions(
     sessions: list[SessionSummary] = []
     seen: set[str] = set()
     for row in rows:
-        if row.session_id in seen:
+        sid = str(row.session_id)
+        if sid in seen:
             continue
-        seen.add(row.session_id)
+        seen.add(sid)
+
+        raw_title = getattr(row, "title", None)
+        raw_last = getattr(row, "last_message", None)
+
+        if isinstance(raw_title, str) and raw_title.strip():
+            title_str = raw_title.strip()
+        elif isinstance(raw_last, str) and raw_last.strip():
+            title_str = raw_last.strip()
+        else:
+            title_str = "New conversation"
+
+        last_str = raw_last if isinstance(raw_last, str) else ""
+        msg_cnt = row.message_count if isinstance(row.message_count, int) else 0
+
         sessions.append(
             SessionSummary(
-                session_id=row.session_id,
-                last_message=row.last_message or "",
-                message_count=row.message_count,
+                session_id=sid,
+                title=title_str[:80],
+                last_message=last_str,
+                message_count=msg_cnt,
                 updated_at=row.latest_created,
             )
         )

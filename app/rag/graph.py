@@ -247,6 +247,21 @@ async def queue_hitl_node(state: RAGState, config: RunnableConfig | None = None)
     citations = state.get("citations", [])
     trigger_reason = state.get("hitl_trigger_reason") or "manual_review"
     max_score = state.get("max_similarity_score", 0.0)
+    is_sensitive = state.get("is_sensitive_action", False)
+
+    # For sensitive action requests (fund transfers, admin changes, termination) where
+    # document retrieval returned a generic "I could not find information..." fallback,
+    # supply a clear action authorization draft so the reviewer and user see a meaningful response.
+    if is_sensitive and (
+        not draft_answer
+        or "could not find information" in draft_answer.lower()
+        or draft_answer == "No relevant documents found."
+    ):
+        draft_answer = (
+            "This action request involves high-stakes operations (e.g. fund disbursement, "
+            "credential modification, or personnel decision) and cannot be executed autonomously. "
+            "It has been queued for human reviewer authorization."
+        )
 
     approval_id = uuid.uuid4()
 
@@ -279,6 +294,7 @@ async def queue_hitl_node(state: RAGState, config: RunnableConfig | None = None)
         "requires_hitl": True,
         "hitl_approval_id": str(approval_id),
         "status": "pending_approval",
+        "draft_answer": draft_answer,
         "final_response": "Your request has been routed to a human reviewer for approval before execution.",
     }
 

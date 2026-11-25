@@ -908,7 +908,7 @@
       .map((s) => {
         const isActive = s.session_id === chat.currentSessionId;
         const timeFormatted = formatTimestamp(s.updated_at);
-        const title = escapeHtml(s.last_message || "New conversation");
+        const title = escapeHtml(s.title || s.last_message || "New conversation");
         const sid = escapeHtml(s.session_id);
 
         return `

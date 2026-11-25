@@ -160,13 +160,26 @@ async def submit_decision(
     # 5. Resolve decision & determine final answer
     if decision == "approve":
         new_status = "approved"
-        final_answer = approval.draft_answer
+        if approval.trigger_reason == "sensitive_action_request" and (
+            "cannot be executed autonomously" in approval.draft_answer
+            or "could not find information" in approval.draft_answer.lower()
+        ):
+            final_answer = (
+                "This action request was reviewed and authorized by an administrator. "
+                "Please proceed through the designated corporate workflow to finalize execution."
+            )
+        else:
+            final_answer = approval.draft_answer
     elif decision == "edit_and_approve":
         new_status = "edited_and_approved"
         final_answer = req.edited_answer if req.edited_answer else approval.draft_answer
     else:  # reject
         new_status = "rejected"
-        final_answer = "This response was reviewed and rejected by an administrator."
+        final_answer = (
+            "This action request was reviewed and rejected by an administrator."
+            if approval.trigger_reason == "sensitive_action_request"
+            else "This response was reviewed and rejected by an administrator."
+        )
 
     now = datetime.now(UTC)
     approval.status = new_status
