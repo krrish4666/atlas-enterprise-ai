@@ -247,7 +247,9 @@ async def queue_hitl_node(state: RAGState, config: RunnableConfig | None = None)
     citations = state.get("citations", [])
     trigger_reason = state.get("hitl_trigger_reason") or "manual_review"
     max_score = state.get("max_similarity_score", 0.0)
-    is_sensitive = state.get("is_sensitive_action", False)
+    is_sensitive = (
+        state.get("is_sensitive_action", False) or trigger_reason == "sensitive_action_request"
+    )
 
     # For sensitive action requests (fund transfers, admin changes, termination) where
     # document retrieval returned a generic "I could not find information..." fallback,
@@ -451,6 +453,7 @@ async def persist_turn_node(
         "assistant_message_id": str(assistant_msg_id),
         "final_response": final_response,
         "status": msg_status,
+        "hitl_approval_id": hitl_approval_id,
     }
 
 

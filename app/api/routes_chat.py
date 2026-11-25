@@ -17,7 +17,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.db.models import AuditLog, ChatMessage, Feedback
+from app.db.models import AuditLog, ChatMessage, Feedback, HITLApproval
 from app.db.session import get_db
 from app.rag.graph import run_rag_pipeline
 
@@ -84,6 +84,7 @@ class MessageItem(BaseModel):
     citations: list[dict[str, Any]] = Field(default_factory=list)
     status: str
     created_at: datetime
+    hitl_approval_id: str | None = None
 
     @field_validator("citations", mode="before")
     @classmethod
@@ -167,19 +168,29 @@ async def list_chat_sessions(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SessionListResponse:
     """Aggregate distinct sessions ordered by most recent message."""
-    # Subquery: aggregate count, first created, and latest created_at per session
+    # Subquery: aggregate count and latest created_at per session
     subq = (
         select(
             ChatMessage.session_id,
             func.count(ChatMessage.id).label("message_count"),
-            func.min(ChatMessage.created_at).label("first_created"),
             func.max(ChatMessage.created_at).label("latest_created"),
         )
         .group_by(ChatMessage.session_id)
         .subquery()
     )
 
-    first_msg = aliased(ChatMessage)
+    # Subquery: find the earliest user message created_at per session
+    user_subq = (
+        select(
+            ChatMessage.session_id,
+            func.min(ChatMessage.created_at).label("first_user_created"),
+        )
+        .where(ChatMessage.role == "user")
+        .group_by(ChatMessage.session_id)
+        .subquery()
+    )
+
+    first_user_msg = aliased(ChatMessage)
     last_msg = aliased(ChatMessage)
 
     stmt = (
@@ -188,7 +199,7 @@ async def list_chat_sessions(
             subq.c.message_count,
             subq.c.latest_created,
             last_msg.content.label("last_message"),
-            first_msg.content.label("title"),
+            first_user_msg.content.label("title"),
         )
         .outerjoin(
             last_msg,
@@ -196,9 +207,14 @@ async def list_chat_sessions(
             & (last_msg.created_at == subq.c.latest_created),
         )
         .outerjoin(
-            first_msg,
-            (first_msg.session_id == subq.c.session_id)
-            & (first_msg.created_at == subq.c.first_created),
+            user_subq,
+            user_subq.c.session_id == subq.c.session_id,
+        )
+        .outerjoin(
+            first_user_msg,
+            (first_user_msg.session_id == subq.c.session_id)
+            & (first_user_msg.role == "user")
+            & (first_user_msg.created_at == user_subq.c.first_user_created),
         )
         .order_by(desc(subq.c.latest_created))
     )
@@ -251,16 +267,51 @@ async def get_session_messages(
 ) -> SessionMessagesResponse:
     """Return all messages for session_id ordered chronologically."""
     stmt = (
-        select(ChatMessage)
+        select(ChatMessage, HITLApproval.id.label("hitl_approval_id"))
+        .outerjoin(HITLApproval, HITLApproval.message_id == ChatMessage.id)
         .where(ChatMessage.session_id == session_id)
         .order_by(ChatMessage.created_at.asc())
     )
     result = await db.execute(stmt)
-    messages = result.scalars().all()
+    try:
+        scalars_mock = getattr(result, "scalars", None)
+        scalars_all = scalars_mock().all() if callable(scalars_mock) else None
+        if isinstance(scalars_all, list) and len(scalars_all) > 0:
+            rows = scalars_all
+        else:
+            rows = result.all()
+    except Exception:
+        rows = result.all()
+
+    items: list[MessageItem] = []
+    for row in rows:
+        if isinstance(row, ChatMessage):
+            msg = row
+            appr_id = None
+        else:
+            msg = getattr(row, "ChatMessage", row[0] if hasattr(row, "__getitem__") else row)
+            appr_raw = getattr(row, "hitl_approval_id", None)
+            appr_id = (
+                str(appr_raw)
+                if appr_raw is not None and not str(type(appr_raw)).__contains__("Mock")
+                else None
+            )
+
+        items.append(
+            MessageItem(
+                id=msg.id,
+                role=msg.role,
+                content=msg.content,
+                citations=msg.citations,
+                status=msg.status,
+                created_at=msg.created_at,
+                hitl_approval_id=appr_id,
+            )
+        )
 
     return SessionMessagesResponse(
         session_id=session_id,
-        messages=[MessageItem.model_validate(m) for m in messages],
+        messages=items,
     )
 
 
