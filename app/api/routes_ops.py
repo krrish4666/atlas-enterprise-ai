@@ -139,9 +139,9 @@ def _resolve_public_langfuse_url() -> str | None:
     """Return browser-accessible Langfuse URL when Langfuse is enabled."""
     if not settings.langfuse_enabled:
         return None
-    host = (settings.langfuse_host or "").strip().rstrip("/")
+    host = (settings.langfuse_host or "https://cloud.langfuse.com").strip().rstrip("/")
     if not host or host.startswith("http://langfuse:"):
-        return "http://localhost:3000"
+        return "https://cloud.langfuse.com"
     return host
 
 

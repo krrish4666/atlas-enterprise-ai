@@ -46,7 +46,12 @@ from app.rag.generator import generate_answer
 from app.rag.guardrails import evaluate_input, evaluate_output
 from app.rag.retriever import retrieve_similar_chunks
 from app.rag.state import RAGState
-from app.rag.tracing import get_langfuse_callback
+from app.rag.tracing import (
+    build_langfuse_metadata,
+    create_otel_trace_id,
+    flush_langfuse,
+    get_langfuse_callback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -547,9 +552,17 @@ async def run_rag_pipeline(
     Returns:
         Final RAGState containing answer, status, citations, approval id, and flags.
     """
-    trace_id = f"lf-trace-{uuid.uuid4().hex[:12]}"
-    langfuse_handler = get_langfuse_callback(session_id=session_id, trace_name="atlas-rag-query")
+    trace_id = create_otel_trace_id()
+    langfuse_handler = get_langfuse_callback(
+        trace_id=trace_id,
+        session_id=session_id,
+        trace_name="atlas-rag-query",
+    )
     callbacks = [langfuse_handler] if langfuse_handler else []
+    langfuse_metadata = build_langfuse_metadata(
+        session_id=session_id,
+        trace_name="atlas-rag-query",
+    )
 
     initial_state: RAGState = {
         "session_id": session_id,
@@ -573,12 +586,16 @@ async def run_rag_pipeline(
     }
 
     config: RunnableConfig = {
+        "callbacks": callbacks,
+        "metadata": langfuse_metadata,
+        "run_name": "atlas-rag-query",
         "configurable": {
             "db": db,
-            "callbacks": callbacks,
             "llm": llm,
-        }
+        },
     }
 
     final_state: RAGState = await rag_graph.ainvoke(initial_state, config=config)
+    if langfuse_handler:
+        flush_langfuse()
     return final_state

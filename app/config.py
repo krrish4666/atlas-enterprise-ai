@@ -49,9 +49,9 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
 
-    # ── Langfuse (Self-hosted Observability v2) ────────────────────────────────
+    # ── Langfuse (SDK v4 OpenTelemetry Observability) ──────────────────────────
     langfuse_enabled: bool = True
-    langfuse_host: str = "http://langfuse:3000"
+    langfuse_host: str = "https://cloud.langfuse.com"
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
 

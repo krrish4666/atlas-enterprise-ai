@@ -35,7 +35,12 @@ from app.rag.graph import (
     run_rag_pipeline,
 )
 from app.rag.state import RAGState
-from app.rag.tracing import get_langfuse_callback
+from app.rag.tracing import (
+    _INITIALIZED_CLIENTS,
+    build_langfuse_metadata,
+    create_otel_trace_id,
+    get_langfuse_callback,
+)
 
 # ── 1. Generator & Citations Tests ───────────────────────────────────────────
 
@@ -144,6 +149,103 @@ def test_get_langfuse_callback_placeholder_keys() -> None:
     with patch("app.rag.tracing.settings.langfuse_public_key", "your_langfuse_public_key"):
         cb = get_langfuse_callback()
         assert cb is None
+
+
+def test_create_otel_trace_id_format() -> None:
+    """create_otel_trace_id generates valid 32-character lowercase hex OTel trace IDs."""
+    trace_id = create_otel_trace_id()
+    assert len(trace_id) == 32
+    assert all(ch in "0123456789abcdef" for ch in trace_id)
+
+
+def test_build_langfuse_metadata_fields() -> None:
+    """build_langfuse_metadata formats SDK v4 RunnableConfig attribute keys."""
+    meta = build_langfuse_metadata(
+        session_id="sess-42",
+        trace_name="atlas-rag-query",
+        user_id="emp-1",
+        tags=["prod"],
+    )
+    assert meta == {
+        "langfuse_trace_name": "atlas-rag-query",
+        "langfuse_tags": ["prod"],
+        "langfuse_session_id": "sess-42",
+        "langfuse_user_id": "emp-1",
+    }
+
+
+def test_get_langfuse_callback_v4_initializes_client_and_trace_context() -> None:
+    """SDK v4 initializes Langfuse(base_url=...) and returns CallbackHandler with trace_context."""
+    mock_client = MagicMock()
+    mock_handler = MagicMock()
+    _INITIALIZED_CLIENTS.clear()
+
+    with (
+        patch("app.rag.tracing.settings.langfuse_enabled", True),
+        patch("app.rag.tracing.settings.langfuse_public_key", "pk-lf-test-123"),
+        patch("app.rag.tracing.settings.langfuse_secret_key", "sk-lf-test-456"),
+        patch("app.rag.tracing.settings.langfuse_host", "https://cloud.langfuse.com"),
+        patch("langfuse.Langfuse", return_value=mock_client) as mock_lf_cls,
+        patch("langfuse.langchain.CallbackHandler", return_value=mock_handler) as mock_cb_cls,
+    ):
+        trace_id = "0123456789abcdef0123456789abcdef"
+        cb = get_langfuse_callback(trace_id=trace_id, session_id="sess-1")
+
+    assert cb is mock_handler
+    mock_lf_cls.assert_called_once_with(
+        public_key="pk-lf-test-123",
+        secret_key="sk-lf-test-456",
+        base_url="https://cloud.langfuse.com",
+    )
+    mock_cb_cls.assert_called_once_with(
+        public_key="pk-lf-test-123",
+        trace_context={"trace_id": trace_id},
+    )
+    _INITIALIZED_CLIENTS.clear()
+
+
+def test_get_langfuse_callback_fails_open_on_error() -> None:
+    """Initialization failures log a warning and return None without raising."""
+    _INITIALIZED_CLIENTS.clear()
+    with (
+        patch("app.rag.tracing.settings.langfuse_enabled", True),
+        patch("app.rag.tracing.settings.langfuse_public_key", "pk-lf-err"),
+        patch("app.rag.tracing.settings.langfuse_secret_key", "sk-lf-err"),
+        patch("langfuse.Langfuse", side_effect=RuntimeError("OTel setup failed")),
+    ):
+        cb = get_langfuse_callback(trace_id="0123456789abcdef0123456789abcdef")
+    assert cb is None
+    _INITIALIZED_CLIENTS.clear()
+
+
+@pytest.mark.asyncio
+async def test_run_rag_pipeline_wires_otel_config_and_flushes() -> None:
+    """run_rag_pipeline passes 32-char trace_id, top-level callbacks/metadata, and flushes."""
+    mock_handler = MagicMock()
+    mock_state = {"status": "completed", "final_response": "Ok", "trace_id": "a" * 32}
+
+    with (
+        patch("app.rag.graph.get_langfuse_callback", return_value=mock_handler) as mock_get_cb,
+        patch("app.rag.graph.flush_langfuse") as mock_flush,
+        patch("app.rag.graph.rag_graph.ainvoke", new_callable=AsyncMock) as mock_invoke,
+    ):
+        mock_invoke.return_value = mock_state
+        await run_rag_pipeline(session_id="sess-otel", query="Leave policy?")
+
+    called_trace_id = mock_get_cb.call_args.kwargs["trace_id"]
+    assert len(called_trace_id) == 32
+    assert all(c in "0123456789abcdef" for c in called_trace_id)
+
+    invoke_state, invoke_kwargs = (
+        mock_invoke.call_args.args[0],
+        mock_invoke.call_args.kwargs,
+    )
+    assert invoke_state["trace_id"] == called_trace_id
+    cfg = invoke_kwargs["config"]
+    assert cfg["callbacks"] == [mock_handler]
+    assert cfg["metadata"]["langfuse_session_id"] == "sess-otel"
+    assert cfg["metadata"]["langfuse_trace_name"] == "atlas-rag-query"
+    mock_flush.assert_called_once()
 
 
 # ── 3. LangGraph Workflow Node Tests ─────────────────────────────────────────

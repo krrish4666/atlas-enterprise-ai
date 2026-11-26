@@ -289,10 +289,10 @@
       langfuseUiLink.href = services.langfuse_host;
       const isLocal = services.langfuse_host.includes("localhost") || services.langfuse_host.includes("127.0.0.1");
       if (langfuseUiLabel) {
-        langfuseUiLabel.textContent = isLocal ? "UI :3000" : "Langfuse Cloud";
+        langfuseUiLabel.textContent = isLocal ? "Self-Hosted" : "Langfuse Cloud";
       }
       if (langfuseModeLabel) {
-        langfuseModeLabel.textContent = isLocal ? "v2 Self-Hosted" : "Cloud Free";
+        langfuseModeLabel.textContent = isLocal ? "OTel Self-Hosted" : "Cloud OTel (v4)";
       }
     }
   }

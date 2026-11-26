@@ -1,6 +1,6 @@
 # Atlas Enterprise AI
 
-Zero-cost, self-hosted Enterprise RAG assistant over private organizational documents with grounded citations, multi-turn chat memory, deterministic input/output guardrails, human-in-the-loop (HITL) approvals, audit logging, and self-hosted Langfuse tracing.
+Zero-cost, self-hosted Enterprise RAG assistant over private organizational documents with grounded citations, multi-turn chat memory, deterministic input/output guardrails, human-in-the-loop (HITL) approvals, audit logging, and Langfuse OpenTelemetry tracing.
 
 ---
 
@@ -11,7 +11,7 @@ Zero-cost, self-hosted Enterprise RAG assistant over private organizational docu
 - **Object Storage:** S3-compatible via `boto3` with direct browser-to-storage presigned PUT uploads — local **RustFS** in dev, **Backblaze B2** in cloud
 - **Embeddings (768-dim):** Native host **Ollama** (`nomic-embed-text`) locally (`EMBED_PROVIDER=ollama`), or **Gemini API** (`models/gemini-embedding-001` with `output_dimensionality=768`) in cloud (`EMBED_PROVIDER=gemini`)
 - **Chat LLM:** Google Gemini API Free Tier (`langchain-google-genai`, `gemini-3.5-flash-lite`)
-- **Observability:** Self-hosted **Langfuse v2** locally, or **Langfuse Cloud** (Free Hobby) in cloud
+- **Observability:** **Langfuse Cloud** (Free Hobby) via SDK v4 OpenTelemetry (`langfuse>=4,<5`; set `LANGFUSE_ENABLED=false` when developing offline)
 - **Frontend:** Vanilla HTML, CSS, and JavaScript served directly by FastAPI (zero build pipeline)
 - **CI/CD & Hosting:** GitHub Actions -> `ghcr.io` (`linux/amd64`) -> **Render Free Web Service** (or self-hosted Ubuntu VM)
 
@@ -45,7 +45,7 @@ Verify service health:
 curl http://localhost:8000/api/health
 ```
 
-Open the dashboard at **http://localhost:8000** (and Langfuse UI at **http://localhost:3000**).
+Open the dashboard at **http://localhost:8000**. *(For local tracing, configure a free `atlas-local-dev` project on [Langfuse Cloud](https://cloud.langfuse.com) in `.env`, or set `LANGFUSE_ENABLED=false` offline.)*
 
 ### 4. Run Lint, Format & Tests
 ```bash
@@ -156,9 +156,11 @@ S3_CORS_ORIGINS=https://atlas.yourdomain.com
 # Demo quota protection
 CHAT_RATE_LIMIT_PER_MINUTE=20
 
-# Langfuse secrets
-LANGFUSE_NEXTAUTH_SECRET=<random-32-char-secret>
-LANGFUSE_SALT=<random-32-char-salt>
+# Langfuse Cloud (SDK v4 OpenTelemetry)
+LANGFUSE_ENABLED=true
+LANGFUSE_HOST=https://cloud.langfuse.com
+LANGFUSE_PUBLIC_KEY=<pk-lf-...>
+LANGFUSE_SECRET_KEY=<sk-lf-...>
 ```
 
 ### Step 4: Start the Production Stack

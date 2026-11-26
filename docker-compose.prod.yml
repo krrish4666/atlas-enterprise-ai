@@ -1,6 +1,7 @@
 # ── Atlas Enterprise AI — Production Docker Compose (Azure Ubuntu VM) ─────────
 # Pulls pre-built API image from ghcr.io instead of building locally.
 # Ollama runs natively on the Ubuntu VM host (http://host.docker.internal:11434).
+# Tracing uses Langfuse Cloud via SDK v4 OpenTelemetry (set LANGFUSE_* in .env).
 # Caddy handles ports 80/443 with automatic HTTPS and proxies RustFS presigned URLs.
 
 name: atlas-enterprise-ai
@@ -32,7 +33,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-atlas}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atlas} -d ${POSTGRES_DB:-atlas}"]
       interval: 10s
@@ -63,31 +63,6 @@ services:
       retries: 5
       start_period: 10s
 
-  # ── Langfuse v2 (self-hosted observability) ─────────────────────────────────
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: atlas-langfuse
-    restart: unless-stopped
-    networks:
-      - atlas-net
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:-langfusepassword}@postgres:5432/${LANGFUSE_DB_NAME:-langfuse}
-      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me-in-production}
-      SALT: ${LANGFUSE_SALT:-change-me-in-production-salt}
-      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health || exit 1"]
-      interval: 20s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
   # ── Atlas API (FastAPI + LangGraph from ghcr.io) ────────────────────────────
   # NOTE: GITHUB_REPOSITORY MUST be lowercase (e.g. myorg/atlas); Docker rejects uppercase tags.
   api:
@@ -104,7 +79,6 @@ services:
       APP_ENV: production
       S3_ENDPOINT_URL: http://rustfs:9000
       OLLAMA_BASE_URL: http://host.docker.internal:11434
-      LANGFUSE_HOST: http://langfuse:3000
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-atlas}:${POSTGRES_PASSWORD:-atlaspassword}@postgres:5432/${POSTGRES_DB:-atlas}
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -154,8 +154,8 @@ def test_health_with_gemini_embed_provider_and_langfuse_cloud(client: TestClient
         settings.s3_endpoint_url = orig_s3_endpoint
 
 
-def test_health_maps_internal_langfuse_host_to_localhost(client: TestClient) -> None:
-    """Docker-internal http://langfuse:3000 maps to http://localhost:3000 for browser UI links."""
+def test_health_maps_legacy_langfuse_host_to_cloud(client: TestClient) -> None:
+    """Legacy internal http://langfuse:3000 falls back to https://cloud.langfuse.com."""
     orig_lf_enabled = settings.langfuse_enabled
     orig_lf_host = settings.langfuse_host
     settings.langfuse_enabled = True
@@ -169,7 +169,7 @@ def test_health_maps_internal_langfuse_host_to_localhost(client: TestClient) -> 
         ):
             resp = client.get("/api/health")
         assert resp.status_code == 200
-        assert resp.json()["services"]["langfuse_host"] == "http://localhost:3000"
+        assert resp.json()["services"]["langfuse_host"] == "https://cloud.langfuse.com"
     finally:
         settings.langfuse_enabled = orig_lf_enabled
         settings.langfuse_host = orig_lf_host

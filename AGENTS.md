@@ -28,7 +28,7 @@ Do **not** swap these components, introduce paid cloud services, or add heavy fr
   - `EMBED_PROVIDER=gemini` (Cloud Demo / Render): Gemini API (`models/gemini-embedding-001` with `output_dimensionality=768` matching `vector(768)`).
   - Never use OpenAI or Bedrock embedding APIs.
 - **Chat LLM:** Google Gemini API (Free Tier) via `langchain-google-genai`. Never use AWS Bedrock or OpenAI.
-- **Observability:** Self-hosted Langfuse v2 (Docker) locally, or **Langfuse Cloud** (Free Hobby) in cloud via `LANGFUSE_HOST` + keys. Never swap to LangSmith or GlassFlow.
+- **Observability:** **Langfuse Cloud** (Free Hobby) via `langfuse>=4,<5` (OpenTelemetry `langfuse.langchain.CallbackHandler`) configured with `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY` (or `LANGFUSE_ENABLED=false` offline). Legacy `langfuse/langfuse:2` is retired from `docker-compose.yml` because Langfuse Cloud removed `/api/public/ingestion` trace ingestion on Nov 16, 2026 and Server v2 lacks `/api/public/otel/v1/traces`. Never swap to LangSmith or GlassFlow.
 - **Frontend:** Lightweight vanilla HTML, CSS, and JavaScript. Never scaffold React, Next.js, Vue, or Tailwind build pipelines.
 - **Container Registry:** GitHub Container Registry (`ghcr.io`) via GitHub Actions. Never configure AWS ECR.
 
