@@ -139,6 +139,11 @@
   const statusRustfs = document.getElementById("status-rustfs");
   const statusOllama = document.getElementById("status-ollama");
   const statusLangfuse = document.getElementById("status-langfuse");
+  const storageServiceName = document.getElementById("storage-service-name");
+  const storageEndpointLabel = document.getElementById("storage-endpoint-label");
+  const docsStorageLabel = document.getElementById("docs-storage-label");
+  const inventoryStorageLabel = document.getElementById("inventory-storage-label");
+  const embedServiceName = document.getElementById("embed-service-name");
   const embedModelLabel = document.getElementById("embed-model-label");
   const embedEndpointLabel = document.getElementById("embed-endpoint-label");
   const langfuseUiLink = document.getElementById("langfuse-ui-link");
@@ -238,13 +243,32 @@
     const isPgUp = services.postgres === "up";
     setServicePill(statusPostgres, isPgUp);
 
-    // 3. RustFS Card
+    // 3. Object Storage Card & Document Management Labels
     const isRustfsUp = services.rustfs === "up";
     setServicePill(statusRustfs, isRustfsUp);
+    const storageLabel = services.storage_label || "Object Storage";
+    if (storageServiceName) {
+      storageServiceName.textContent = storageLabel.endsWith("Storage")
+        ? storageLabel
+        : `${storageLabel} Storage`;
+    }
+    if (storageEndpointLabel) {
+      storageEndpointLabel.textContent = storageLabel === "RustFS" ? ":9000 / :9001" : "Cloud S3";
+    }
+    if (docsStorageLabel) {
+      docsStorageLabel.textContent = storageLabel;
+    }
+    if (inventoryStorageLabel) {
+      inventoryStorageLabel.textContent = storageLabel;
+    }
 
     // 4. Embeddings Card (Ollama locally or Gemini API in cloud)
     const isOllamaUp = services.ollama === "up";
     setServicePill(statusOllama, isOllamaUp);
+    if (embedServiceName) {
+      embedServiceName.textContent =
+        services.embed_provider === "gemini" ? "Gemini Embeddings" : "Host Ollama";
+    }
     if (embedModelLabel && embedEndpointLabel) {
       if (services.embed_provider === "gemini") {
         embedModelLabel.textContent = "gemini-embedding-001";
@@ -603,6 +627,13 @@
     uploadDocumentDirect(file);
   }
 
+  function getStorageLabel() {
+    return (
+      (ops.healthData && ops.healthData.services && ops.healthData.services.storage_label) ||
+      "Object Storage"
+    );
+  }
+
   async function uploadDocumentDirect(file) {
     if (docs.isUploading) return;
     docs.isUploading = true;
@@ -640,8 +671,8 @@
 
       const { document_id, upload_url } = await urlRes.json();
 
-      // Step 2: Direct PUT to RustFS using XMLHttpRequest for progress
-      uploadStatusText.textContent = "Uploading directly to RustFS…";
+      // Step 2: Direct PUT to Object Storage using XMLHttpRequest for progress
+      uploadStatusText.textContent = `Uploading directly to ${getStorageLabel()}…`;
 
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", upload_url);
@@ -689,14 +720,14 @@
             docs.isUploading = false;
           }
         } else {
-          uploadStatusText.textContent = `RustFS upload error (${xhr.status})`;
+          uploadStatusText.textContent = `${getStorageLabel()} upload error (${xhr.status})`;
           uploadProgressFill.classList.add("is-failed");
           docs.isUploading = false;
         }
       };
 
       xhr.onerror = () => {
-        uploadStatusText.textContent = "Network error connecting to RustFS";
+        uploadStatusText.textContent = `Network error connecting to ${getStorageLabel()}`;
         uploadProgressFill.classList.add("is-failed");
         docs.isUploading = false;
       };

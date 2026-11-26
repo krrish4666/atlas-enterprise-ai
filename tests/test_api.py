@@ -102,11 +102,13 @@ def test_health_with_gemini_embed_provider_and_langfuse_cloud(client: TestClient
     orig_key = settings.google_api_key
     orig_lf_enabled = settings.langfuse_enabled
     orig_lf_host = settings.langfuse_host
+    orig_s3_endpoint = settings.s3_endpoint_url
 
     settings.embed_provider = "gemini"
     settings.google_api_key = "AIzaTestKeyForHealthCheck"
     settings.langfuse_enabled = True
     settings.langfuse_host = "https://cloud.langfuse.com"
+    settings.s3_endpoint_url = "https://s3.us-west-004.backblazeb2.com"
 
     try:
         with (
@@ -120,9 +122,19 @@ def test_health_with_gemini_embed_provider_and_langfuse_cloud(client: TestClient
         body = response.json()
         assert body["status"] == "ok"
         assert body["services"]["embed_provider"] == "gemini"
+        assert body["services"]["storage_label"] == "Backblaze B2"
         assert body["services"]["ollama"] == "up"
         assert body["services"]["langfuse_host"] == "https://cloud.langfuse.com"
         mock_ollama.assert_not_awaited()
+
+        # Generic custom S3 endpoint falls back to "S3 Storage"
+        settings.s3_endpoint_url = "https://s3.custom-cloud.example.com"
+        with (
+            patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock, return_value=True),
+            patch("app.api.routes_ops.check_rustfs", return_value=True),
+        ):
+            custom_s3 = client.get("/api/health")
+        assert custom_s3.json()["services"]["storage_label"] == "S3 Storage"
 
         # Missing Gemini API key marks embeddings down without crashing
         settings.google_api_key = ""
@@ -139,6 +151,7 @@ def test_health_with_gemini_embed_provider_and_langfuse_cloud(client: TestClient
         settings.google_api_key = orig_key
         settings.langfuse_enabled = orig_lf_enabled
         settings.langfuse_host = orig_lf_host
+        settings.s3_endpoint_url = orig_s3_endpoint
 
 
 def test_health_maps_internal_langfuse_host_to_localhost(client: TestClient) -> None:

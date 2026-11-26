@@ -36,6 +36,7 @@ class HealthServices(BaseModel):
 
     postgres: str
     rustfs: str
+    storage_label: str = "S3 Storage"
     ollama: str
     embed_provider: str = "ollama"
     langfuse_enabled: bool
@@ -124,6 +125,16 @@ def check_gemini_embeddings() -> bool:
     return bool(key and key != "your_google_gemini_api_key_here" and model)
 
 
+def _resolve_storage_label() -> str:
+    """Return user-facing storage label derived from S3_ENDPOINT_URL."""
+    endpoint = (settings.s3_endpoint_url or "").strip().lower()
+    if "backblazeb2" in endpoint:
+        return "Backblaze B2"
+    if "rustfs" in endpoint or "localhost" in endpoint or "127.0.0.1" in endpoint:
+        return "RustFS"
+    return "S3 Storage"
+
+
 def _resolve_public_langfuse_url() -> str | None:
     """Return browser-accessible Langfuse URL when Langfuse is enabled."""
     if not settings.langfuse_enabled:
@@ -157,6 +168,7 @@ async def health_check() -> HealthResponse:
     services = HealthServices(
         postgres="up" if pg_ok else "down",
         rustfs="up" if storage_ok else "down",
+        storage_label=_resolve_storage_label(),
         ollama="up" if embed_ok else "down",
         embed_provider=provider,
         langfuse_enabled=settings.langfuse_enabled,

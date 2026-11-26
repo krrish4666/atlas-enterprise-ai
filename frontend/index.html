@@ -183,7 +183,7 @@
         <div class="docs-header">
           <div>
             <h2>Document Management</h2>
-            <p class="docs-desc">Direct-to-storage presigned upload to RustFS, chunking, and pgvector embeddings.</p>
+            <p class="docs-desc">Direct-to-storage presigned upload to <span id="docs-storage-label">Object Storage</span>, chunking, and pgvector embeddings.</p>
           </div>
           <div class="docs-actions">
             <button id="refresh-docs-btn" class="btn btn-secondary" title="Refresh document list">
@@ -225,7 +225,7 @@
                 <span class="upload-size font-mono tabular-nums" id="upload-filesize">0 KB</span>
               </div>
               <div class="upload-status-badge">
-                <span class="upload-status-text" id="upload-status-text">Uploading to RustFS…</span>
+                <span class="upload-status-text" id="upload-status-text">Uploading to Object Storage…</span>
                 <span class="upload-percent font-mono tabular-nums" id="upload-percent">0%</span>
               </div>
             </div>
@@ -242,7 +242,7 @@
               <h3>Indexed Documents</h3>
               <span class="badge" id="docs-count-badge">0</span>
             </div>
-            <span class="inventory-note">Vectors stored in PostgreSQL (768-dim) · Raw bytes in RustFS</span>
+            <span class="inventory-note">Vectors stored in PostgreSQL (768-dim) · Raw bytes in <span id="inventory-storage-label">Object Storage</span></span>
           </div>
 
           <div class="table-container">
@@ -365,10 +365,10 @@
             </div>
           </div>
 
-          <!-- Card 2: RustFS -->
+          <!-- Card 2: Object Storage -->
           <div class="health-card" id="card-rustfs">
             <div class="health-card-header">
-              <span class="service-name">RustFS Storage</span>
+              <span class="service-name" id="storage-service-name">Object Storage</span>
               <span class="service-pill pill-neutral" id="status-rustfs">
                 <span class="status-dot dot-neutral"></span>
                 <span class="status-text">Checking…</span>
@@ -376,14 +376,14 @@
             </div>
             <div class="service-meta">
               <span>S3-Compatible</span>
-              <span class="meta-endpoint">:9000 / :9001</span>
+              <span class="meta-endpoint" id="storage-endpoint-label">S3 Endpoint</span>
             </div>
           </div>
 
-          <!-- Card 3: Ollama -->
+          <!-- Card 3: Embeddings -->
           <div class="health-card" id="card-ollama">
             <div class="health-card-header">
-              <span class="service-name">Host Ollama</span>
+              <span class="service-name" id="embed-service-name">Embeddings</span>
               <span class="service-pill pill-neutral" id="status-ollama">
                 <span class="status-dot dot-neutral"></span>
                 <span class="status-text">Checking…</span>
@@ -475,6 +475,6 @@
     </section>
   </main>
 
-  <script src="/app.js?v=3"></script>
+  <script src="/app.js?v=4"></script>
 </body>
 </html>
