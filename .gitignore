@@ -46,3 +46,9 @@ langfuse_data/
 # Logs
 *.log
 
+# Local-only reference, docs, sample documents & assets (kept locally, not pushed)
+_reference/
+Company_Docs/
+docs/
+architecture.png
+
