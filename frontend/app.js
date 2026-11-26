@@ -919,13 +919,147 @@
     return "sess-" + Math.random().toString(36).substring(2, 10);
   }
 
-  function formatCitationBadges(text) {
-    if (!text) return "";
-    let formatted = escapeHtml(text);
-    formatted = formatted.replace(/\[(\d+)\]/g, (match, num) => {
+  function formatInlineMarkdown(escapedText) {
+    if (!escapedText) return "";
+
+    // Protect inline code spans first so asterisks or brackets inside code stay literal
+    const codeTokens = [];
+    let out = escapedText.replace(/`([^`]+)`/g, (_m, code) => {
+      const token = `\u0000CODE${codeTokens.length}\u0000`;
+      codeTokens.push(`<code class="md-code">${code}</code>`);
+      return token;
+    });
+
+    // Bold (**text** or __text__) and italic (*text*)
+    out = out.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/__([^_]+?)__/g, "<strong>$1</strong>");
+    out = out.replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, "$1<em>$2</em>");
+
+    // Inline clickable citations [1], [2]
+    out = out.replace(/\[(\d+)\]/g, (match, num) => {
       return `<button class="citation-badge" data-cite-index="${num}" title="Inspect source citation ${match}">${match}</button>`;
     });
-    return formatted;
+
+    // Restore inline code spans
+    out = out.replace(/\u0000CODE(\d+)\u0000/g, (_m, idx) => codeTokens[Number(idx)] || "");
+    return out;
+  }
+
+  function renderMarkdownWithCitations(text) {
+    if (!text) return "";
+
+    const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+    const htmlParts = [];
+    const listStack = []; // [{ type: "ul"|"ol", indent: number }]
+    let paragraphLines = [];
+    let inCodeBlock = false;
+    let codeBlockLines = [];
+
+    function flushParagraph() {
+      if (paragraphLines.length === 0) return;
+      const joined = paragraphLines.map((l) => formatInlineMarkdown(escapeHtml(l))).join("<br>");
+      htmlParts.push(`<p class="md-p">${joined}</p>`);
+      paragraphLines = [];
+    }
+
+    function closeListsTo(targetIndent = -1) {
+      while (listStack.length > 0 && listStack[listStack.length - 1].indent > targetIndent) {
+        const closed = listStack.pop();
+        htmlParts.push(`</li></${closed.type}>`);
+      }
+    }
+
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+
+      // Fenced code blocks (``` ... ```)
+      if (trimmed.startsWith("```")) {
+        flushParagraph();
+        closeListsTo(-1);
+        if (!inCodeBlock) {
+          inCodeBlock = true;
+          codeBlockLines = [];
+        } else {
+          htmlParts.push(`<pre class="md-pre"><code>${escapeHtml(codeBlockLines.join("\n"))}</code></pre>`);
+          inCodeBlock = false;
+          codeBlockLines = [];
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeBlockLines.push(rawLine);
+        continue;
+      }
+
+      // Blank line closes paragraph and open lists
+      if (!trimmed) {
+        flushParagraph();
+        closeListsTo(-1);
+        continue;
+      }
+
+      // Headings (#, ##, ###, ####)
+      const headingMatch = rawLine.match(/^\s{0,3}(#{1,4})\s+(.+)$/);
+      if (headingMatch) {
+        flushParagraph();
+        closeListsTo(-1);
+        htmlParts.push(`<h4 class="md-heading">${formatInlineMarkdown(escapeHtml(headingMatch[2].trim()))}</h4>`);
+        continue;
+      }
+
+      // Unordered (*, -, +) or Ordered (1., 2.) list items with optional indentation
+      const ulMatch = rawLine.match(/^(\s*)[*\-+]\s+(.*)$/);
+      const olMatch = rawLine.match(/^(\s*)\d+\.\s+(.*)$/);
+      if (ulMatch || olMatch) {
+        flushParagraph();
+        const type = ulMatch ? "ul" : "ol";
+        const indent = (ulMatch ? ulMatch[1] : olMatch[1]).replace(/\t/g, "  ").length;
+        const itemText = (ulMatch ? ulMatch[2] : olMatch[2]).trim();
+
+        if (listStack.length === 0) {
+          listStack.push({ type, indent });
+          htmlParts.push(`<${type} class="md-list"><li>${formatInlineMarkdown(escapeHtml(itemText))}`);
+        } else {
+          const top = listStack[listStack.length - 1];
+          if (indent > top.indent) {
+            listStack.push({ type, indent });
+            htmlParts.push(`<${type} class="md-list md-list-nested"><li>${formatInlineMarkdown(escapeHtml(itemText))}`);
+          } else {
+            closeListsTo(indent);
+            const currentTop = listStack[listStack.length - 1];
+            if (!currentTop) {
+              listStack.push({ type, indent });
+              htmlParts.push(`<${type} class="md-list"><li>${formatInlineMarkdown(escapeHtml(itemText))}`);
+            } else if (currentTop.type !== type) {
+              htmlParts.push(`</li></${currentTop.type}>`);
+              listStack.pop();
+              listStack.push({ type, indent });
+              htmlParts.push(`<${type} class="md-list"><li>${formatInlineMarkdown(escapeHtml(itemText))}`);
+            } else {
+              htmlParts.push(`</li><li>${formatInlineMarkdown(escapeHtml(itemText))}`);
+            }
+          }
+        }
+        continue;
+      }
+
+      // Normal prose line
+      closeListsTo(-1);
+      paragraphLines.push(trimmed);
+    }
+
+    if (inCodeBlock && codeBlockLines.length > 0) {
+      htmlParts.push(`<pre class="md-pre"><code>${escapeHtml(codeBlockLines.join("\n"))}</code></pre>`);
+    }
+    flushParagraph();
+    closeListsTo(-1);
+
+    return htmlParts.join("");
+  }
+
+  function formatCitationBadges(text) {
+    return renderMarkdownWithCitations(text);
   }
 
   async function fetchSessions() {
@@ -1598,7 +1732,7 @@
             ${item.final_answer ? `
               <div class="ticket-section">
                 <span class="ticket-label">Final Released Answer</span>
-                <div class="ticket-final-text">${escapeHtml(item.final_answer)}</div>
+                <div class="ticket-final-text">${renderMarkdownWithCitations(item.final_answer)}</div>
               </div>
             ` : ""}
             <div class="ticket-section">
@@ -1677,7 +1811,7 @@
 
             <div class="ticket-section">
               <span class="ticket-label">Drafted AI Answer (Post-PII Redaction)</span>
-              <div class="ticket-draft-text">${escapeHtml(item.draft_answer)}</div>
+              <div class="ticket-draft-text">${renderMarkdownWithCitations(item.draft_answer)}</div>
             </div>
 
             ${citationsHtml}
