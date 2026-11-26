@@ -894,6 +894,8 @@
     messages: [],
     isLoading: false,
     messageStore: new Map(),
+    confirmingDeleteSessionId: null,
+    activeLoadId: 0,
   };
 
   // DOM Elements for Chat View
@@ -1096,17 +1098,37 @@
     const html = sessionsList
       .map((s) => {
         const isActive = s.session_id === chat.currentSessionId;
+        const isConfirming = s.session_id === chat.confirmingDeleteSessionId;
         const timeFormatted = formatTimestamp(s.updated_at);
         const title = escapeHtml(s.title || s.last_message || "New conversation");
         const sid = escapeHtml(s.session_id);
 
-        return `
-          <div class="session-item ${isActive ? "active" : ""}" data-session-id="${sid}" role="button" tabindex="0">
-            <span class="session-item-title" title="${title}">${title}</span>
+        const footerHtml = isConfirming
+          ? `
+            <div class="session-delete-confirm">
+              <span class="delete-confirm-prompt">Delete chat?</span>
+              <button type="button" class="btn-delete-confirm btn-session-delete-confirm" data-session-id="${sid}">Yes</button>
+              <button type="button" class="btn-delete-cancel btn-session-delete-cancel" data-session-id="${sid}">No</button>
+            </div>
+          `
+          : `
             <div class="session-item-meta">
               <span class="font-mono tabular-nums">${timeFormatted}</span>
               <span class="font-mono tabular-nums">${s.message_count} ${s.message_count === 1 ? "msg" : "msgs"}</span>
             </div>
+          `;
+
+        return `
+          <div class="session-item ${isActive ? "active" : ""}" data-session-id="${sid}" role="button" tabindex="0">
+            <div class="session-item-top">
+              <span class="session-item-title" title="${title}">${title}</span>
+              <button type="button" class="btn-icon-danger btn-delete-session" data-session-id="${sid}" title="Delete conversation" aria-label="Delete conversation">
+                <svg class="delete-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+                  <path d="M2.5 4.5h11M5.5 4.5V2.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2M12.5 4.5v9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-9M6.5 7.5v4M9.5 7.5v4"/>
+                </svg>
+              </button>
+            </div>
+            ${footerHtml}
           </div>
         `;
       })
@@ -1115,22 +1137,68 @@
     chatSessionsList.innerHTML = html;
   }
 
-  async function loadSession(sessionId) {
+  async function deleteSession(sessionId) {
+    if (!sessionId) return;
+
+    try {
+      const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Delete failed: HTTP ${res.status}`);
+      }
+
+      chat.confirmingDeleteSessionId = null;
+      chat.sessions = chat.sessions.filter((s) => s.session_id !== sessionId);
+
+      if (chat.currentSessionId === sessionId) {
+        startNewChat();
+      } else {
+        renderSessions(chat.sessions);
+      }
+
+      if (typeof updatePendingApprovalsCount === "function") {
+        updatePendingApprovalsCount();
+      }
+      if (typeof fetchAuditLogs === "function") {
+        fetchAuditLogs();
+      }
+    } catch (err) {
+      console.warn("[Atlas Chat] Failed to delete session:", err.message);
+      chat.confirmingDeleteSessionId = null;
+      renderSessions(chat.sessions);
+      alert(`Failed to delete conversation: ${err.message}`);
+    }
+  }
+
+  async function loadSession(sessionId, options = {}) {
+    const { silent = false } = options;
+    const reqId = ++chat.activeLoadId;
     chat.currentSessionId = sessionId;
+    chat.confirmingDeleteSessionId = null;
     renderSessions(chat.sessions);
 
     if (!chatMessages) return;
-    chatMessages.innerHTML = `<div class="sessions-loading">Loading conversation history…</div>`;
-    closeInspector();
+    if (!silent) {
+      chatMessages.innerHTML = `<div class="sessions-loading">Loading conversation history…</div>`;
+      closeInspector();
+    }
 
     try {
-      const res = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+      const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
         headers: getAuthHeaders(),
       });
       if (!res.ok) {
         throw new Error(`Failed to load messages: HTTP ${res.status}`);
       }
       const data = await res.json();
+      if (reqId !== chat.activeLoadId || chat.currentSessionId !== sessionId) {
+        return;
+      }
+
+      const prevCount = chat.messages.length;
       chat.messages = data.messages || [];
 
       chatMessages.innerHTML = "";
@@ -1143,17 +1211,23 @@
         chat.messages.forEach((msg) => {
           renderMessage(msg);
         });
-        scrollChatToBottom();
+        if (!silent || chat.messages.length !== prevCount) {
+          scrollChatToBottom();
+        }
       }
     } catch (err) {
       console.warn("[Atlas Chat] Failed to load session messages:", err.message);
-      chatMessages.innerHTML = `<div class="table-error">Failed to load conversation history.</div>`;
+      if (!silent) {
+        chatMessages.innerHTML = `<div class="table-error">Failed to load conversation history.</div>`;
+      }
     }
   }
 
   function startNewChat() {
+    chat.activeLoadId += 1;
     chat.currentSessionId = generateSessionId();
     chat.messages = [];
+    chat.confirmingDeleteSessionId = null;
     closeInspector();
     renderSessions(chat.sessions);
 
@@ -1317,11 +1391,13 @@
       updateSendButtonState();
     }
 
-    renderMessage({
+    const userMsg = {
       role: "user",
       content: query,
       created_at: new Date().toISOString(),
-    });
+    };
+    chat.messages.push(userMsg);
+    renderMessage(userMsg);
 
     const loadingTurn = document.createElement("div");
     loadingTurn.className = "message-turn assistant is-thinking";
@@ -1362,7 +1438,7 @@
 
       const chatData = await res.json();
 
-      renderMessage({
+      const assistantMsg = {
         id: chatData.message_id,
         role: "assistant",
         content: chatData.answer,
@@ -1372,7 +1448,9 @@
         hitl_approval_id: chatData.hitl_approval_id,
         trace_id: chatData.trace_id,
         created_at: new Date().toISOString(),
-      });
+      };
+      chat.messages.push(assistantMsg);
+      renderMessage(assistantMsg);
 
       scrollChatToBottom();
       fetchSessions();
@@ -1521,11 +1599,52 @@
 
     if (chatSessionsList) {
       chatSessionsList.addEventListener("click", (e) => {
+        const deleteBtn = e.target.closest(".btn-delete-session");
+        if (deleteBtn) {
+          e.stopPropagation();
+          const sid = deleteBtn.getAttribute("data-session-id");
+          if (sid) {
+            chat.confirmingDeleteSessionId = sid;
+            renderSessions(chat.sessions);
+          }
+          return;
+        }
+
+        const confirmBtn = e.target.closest(".btn-session-delete-confirm");
+        if (confirmBtn) {
+          e.stopPropagation();
+          const sid = confirmBtn.getAttribute("data-session-id");
+          deleteSession(sid);
+          return;
+        }
+
+        const cancelBtn = e.target.closest(".btn-session-delete-cancel");
+        if (cancelBtn) {
+          e.stopPropagation();
+          chat.confirmingDeleteSessionId = null;
+          renderSessions(chat.sessions);
+          return;
+        }
+
         const sessionItem = e.target.closest(".session-item");
         if (sessionItem) {
           const sid = sessionItem.getAttribute("data-session-id");
           if (sid && sid !== chat.currentSessionId) {
             loadSession(sid);
+          }
+        }
+      });
+
+      chatSessionsList.addEventListener("keydown", (e) => {
+        if (e.target.closest("button")) return;
+        if (e.key === "Enter" || e.key === " ") {
+          const sessionItem = e.target.closest(".session-item");
+          if (sessionItem) {
+            e.preventDefault();
+            const sid = sessionItem.getAttribute("data-session-id");
+            if (sid && sid !== chat.currentSessionId) {
+              loadSession(sid);
+            }
           }
         }
       });
@@ -1574,9 +1693,16 @@
 
     fetchSessions();
 
-    window.addEventListener("atlas:view-change", (e) => {
+    window.addEventListener("atlas:view-change", async (e) => {
       if (e.detail && e.detail.view === "chat") {
-        fetchSessions();
+        await fetchSessions();
+        if (
+          !chat.isLoading &&
+          chat.currentSessionId &&
+          chat.sessions.some((s) => s.session_id === chat.currentSessionId)
+        ) {
+          await loadSession(chat.currentSessionId, { silent: true });
+        }
       }
     });
   }

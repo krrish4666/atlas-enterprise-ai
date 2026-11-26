@@ -31,11 +31,12 @@ END
 
 import logging
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
-from sqlalchemy import select, update
+from sqlalchemy import case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -72,12 +73,22 @@ async def load_memory_node(state: RAGState, config: RunnableConfig | None = None
         stmt = (
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)
-            .order_by(ChatMessage.created_at.asc())
-            .limit(10)
+            .order_by(
+                ChatMessage.created_at.desc(),
+                case((ChatMessage.role == "user", 1), else_=0),
+                ChatMessage.id.desc(),
+            )
+            .limit(2)
         )
         result = await db.execute(stmt)
-        messages = result.scalars().all()
-        # Keep only the last 2 messages for memory to prevent context explosion on Free Tier
+        messages = list(result.scalars().all())
+        # Keep only the last 2 messages in chronological order (user before assistant on ties)
+        messages.sort(
+            key=lambda m: (
+                m.created_at or datetime.min.replace(tzinfo=UTC),
+                0 if m.role == "user" else 1,
+            )
+        )
         recent = messages[-2:] if len(messages) > 2 else messages
         return [{"role": m.role, "content": m.content} for m in recent]
 
@@ -336,6 +347,9 @@ async def persist_turn_node(
 
     user_msg_id = uuid.uuid4()
     assistant_msg_id = uuid.uuid4()
+    # Set explicit timestamps so user always strictly precedes assistant inside a single DB tx
+    user_created_at = datetime.now(UTC)
+    assistant_created_at = user_created_at + timedelta(milliseconds=1)
 
     configurable = (config or {}).get("configurable", {})
     session_db = configurable.get("db")
@@ -349,6 +363,7 @@ async def persist_turn_node(
             citations=[],
             status="completed",
             trace_id=trace_id,
+            created_at=user_created_at,
         )
         assistant_msg = ChatMessage(
             id=assistant_msg_id,
@@ -358,6 +373,7 @@ async def persist_turn_node(
             citations=citations,
             status=msg_status,
             trace_id=trace_id,
+            created_at=assistant_created_at,
         )
         db.add(user_msg)
         db.add(assistant_msg)

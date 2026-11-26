@@ -1346,13 +1346,37 @@ pre,
   border-color: var(--border-subtle);
 }
 
+.session-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
 .session-item-title {
+  flex: 1;
+  min-width: 0;
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.btn-delete-session {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  opacity: 0.45;
+  transition: opacity var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.session-item:hover .btn-delete-session,
+.session-item:focus-within .btn-delete-session,
+.session-item.active .btn-delete-session {
+  opacity: 1;
 }
 
 .session-item-meta {
@@ -1362,6 +1386,14 @@ pre,
   font-size: 0.7rem;
   color: var(--text-dim);
   margin-top: 0.2rem;
+}
+
+.session-delete-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
 }
 
 /* ── Center Conversation Canvas ────────────────────────────────────────────── */

@@ -11,9 +11,9 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -101,6 +101,14 @@ class SessionMessagesResponse(BaseModel):
 
     session_id: str
     messages: list[MessageItem]
+
+
+class SessionDeleteResponse(BaseModel):
+    """Confirmation of deleted conversation session."""
+
+    deleted: bool = True
+    session_id: str
+    deleted_messages: int
 
 
 class FeedbackRequest(BaseModel):
@@ -218,7 +226,10 @@ async def list_chat_sessions(
             & (first_user_msg.role == "user")
             & (first_user_msg.created_at == user_subq.c.first_user_created),
         )
-        .order_by(desc(subq.c.latest_created))
+        .order_by(
+            desc(subq.c.latest_created),
+            desc(case((last_msg.role == "assistant", 1), else_=0)),
+        )
     )
 
     result = await db.execute(stmt)
@@ -272,18 +283,20 @@ async def get_session_messages(
         select(ChatMessage, HITLApproval.id.label("hitl_approval_id"))
         .outerjoin(HITLApproval, HITLApproval.message_id == ChatMessage.id)
         .where(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at.asc())
+        .order_by(
+            ChatMessage.created_at.asc(),
+            case((ChatMessage.role == "user", 0), else_=1),
+            ChatMessage.id.asc(),
+        )
     )
     result = await db.execute(stmt)
-    try:
-        scalars_mock = getattr(result, "scalars", None)
-        scalars_all = scalars_mock().all() if callable(scalars_mock) else None
-        if isinstance(scalars_all, list) and len(scalars_all) > 0:
-            rows = scalars_all
-        else:
-            rows = result.all()
-    except Exception:
-        rows = result.all()
+    rows_all = result.all() if callable(getattr(result, "all", None)) else None
+    if isinstance(rows_all, list) and len(rows_all) > 0:
+        rows = rows_all
+    else:
+        scalars_fn = getattr(result, "scalars", None)
+        scalars_all = scalars_fn().all() if callable(scalars_fn) else None
+        rows = scalars_all if isinstance(scalars_all, list) else []
 
     items: list[MessageItem] = []
     for row in rows:
@@ -311,9 +324,63 @@ async def get_session_messages(
             )
         )
 
+    # Guarantee user messages always precede assistant messages when timestamps tie
+    items.sort(key=lambda m: (m.created_at, 0 if m.role == "user" else 1))
+
     return SessionMessagesResponse(
         session_id=session_id,
         messages=items,
+    )
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    response_model=SessionDeleteResponse,
+    summary="Delete a conversation session and all its messages",
+)
+async def delete_chat_session(
+    session_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_user_role: Annotated[str | None, Header(alias="X-User-Role")] = None,
+) -> SessionDeleteResponse:
+    """Remove all chat messages (and any pending HITL tickets) for session_id."""
+    count_stmt = select(func.count(ChatMessage.id)).where(ChatMessage.session_id == session_id)
+    count_res = await db.execute(count_stmt)
+    raw_count = count_res.scalar_one_or_none()
+    msg_count = raw_count if isinstance(raw_count, int) else 0
+
+    if msg_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Chat session '{session_id}' not found.",
+        )
+
+    # Clean up pending HITL tickets tied to the deleted conversation before removing messages
+    await db.execute(
+        delete(HITLApproval).where(
+            HITLApproval.session_id == session_id,
+            HITLApproval.status == "pending",
+        )
+    )
+    await db.execute(delete(ChatMessage).where(ChatMessage.session_id == session_id))
+
+    actor_role = (x_user_role or "employee").strip().lower() or "employee"
+    db.add(
+        AuditLog(
+            id=uuid.uuid4(),
+            event_type="session_deleted",
+            actor_role=actor_role,
+            session_id=session_id,
+            resource_id=session_id,
+            details={"deleted_messages": msg_count},
+        )
+    )
+    await db.commit()
+
+    return SessionDeleteResponse(
+        deleted=True,
+        session_id=session_id,
+        deleted_messages=msg_count,
     )
 
 
