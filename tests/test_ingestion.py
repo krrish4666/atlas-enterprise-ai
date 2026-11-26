@@ -230,6 +230,36 @@ def test_get_embedder_factory_selection() -> None:
         get_embedder("openai")
 
 
+@pytest.mark.asyncio
+async def test_gemini_embedder_retries_on_429_rate_limit() -> None:
+    """GeminiEmbedder batches <=100, parses retry delay on 429, sleeps, and succeeds."""
+    rate_limit_exc = RuntimeError(
+        "429 RESOURCE_EXHAUSTED: Quota exceeded for embed_content. Please retry in 22.7s."
+    )
+    mock_client = MagicMock()
+    mock_client.aembed_documents = AsyncMock(
+        side_effect=[
+            rate_limit_exc,
+            [[0.05] * 768, [0.06] * 768],
+        ]
+    )
+
+    emb = GeminiEmbedder(api_key="test-key")
+    with (
+        patch.object(emb, "_get_client", return_value=mock_client),
+        patch("app.ingestion.embedder.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        res = await emb.embed_texts(["Chunk 1", "Chunk 2"], batch_size=250)
+
+    assert len(res) == 2
+    assert len(res[0]) == 768
+    # Batch size capped at 100
+    assert mock_client.aembed_documents.await_count == 2
+    assert mock_client.aembed_documents.await_args_list[0].kwargs["batch_size"] == 100
+    # ceil(22.7) + 2 = 25s sleep
+    mock_sleep.assert_awaited_once_with(25)
+
+
 # ── 4. Document API Routes Tests ──────────────────────────────────────────────
 
 
