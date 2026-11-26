@@ -21,11 +21,14 @@ Run every command from the repository root. Prefer file-scoped checks while iter
 Do **not** swap these components, introduce paid cloud services, or add heavy frameworks without explicit user approval:
 
 - **Backend & Orchestration:** Python + FastAPI + LangGraph.
-- **Object Storage:** RustFS (Docker, S3-compatible) accessed via `boto3`. Never use AWS S3 or deprecated MinIO.
-- **Database & Vector Store:** Single PostgreSQL 16 instance with `pgvector`. Never add Pinecone, Qdrant, Chroma, or Redis unless explicitly requested.
-- **Embeddings:** Ollama running natively on the host OS (`http://host.docker.internal:11434` from Docker, `http://localhost:11434` from host) running `nomic-embed-text` (**768 dimensions**). Ollama runs natively on the host OS (CPU-only optimization); do NOT add an `ollama` service to `docker-compose.yml`. Never use OpenAI, Bedrock, or Gemini embedding APIs.
+- **Object Storage:** S3-compatible via `boto3` (`S3_REGION`, `S3_ADDRESSING_STYLE=path`). Local Dev uses **RustFS** (Docker); 24/7 Cloud Demo uses **Backblaze B2** (free tier). Never use deprecated MinIO.
+- **Database & Vector Store:** Single PostgreSQL 16 instance with `pgvector` (Local Postgres container locally; **Neon Free Postgres** in cloud). Never add Pinecone, Qdrant, Chroma, or Redis unless explicitly requested.
+- **Embeddings:** Pluggable **768-dimensional** embeddings via `EMBED_PROVIDER`:
+  - `EMBED_PROVIDER=ollama` (default for Local Dev): Ollama running natively on the host OS (`http://host.docker.internal:11434` from Docker, `http://localhost:11434` from host) running `nomic-embed-text`. Do NOT add an `ollama` service to `docker-compose.yml`.
+  - `EMBED_PROVIDER=gemini` (Cloud Demo / Render): Gemini API (`models/gemini-embedding-001` with `output_dimensionality=768` matching `vector(768)`).
+  - Never use OpenAI or Bedrock embedding APIs.
 - **Chat LLM:** Google Gemini API (Free Tier) via `langchain-google-genai`. Never use AWS Bedrock or OpenAI.
-- **Observability:** Self-hosted Langfuse (Docker). Never swap to LangSmith or GlassFlow.
+- **Observability:** Self-hosted Langfuse v2 (Docker) locally, or **Langfuse Cloud** (Free Hobby) in cloud via `LANGFUSE_HOST` + keys. Never swap to LangSmith or GlassFlow.
 - **Frontend:** Lightweight vanilla HTML, CSS, and JavaScript. Never scaffold React, Next.js, Vue, or Tailwind build pipelines.
 - **Container Registry:** GitHub Container Registry (`ghcr.io`) via GitHub Actions. Never configure AWS ECR.
 

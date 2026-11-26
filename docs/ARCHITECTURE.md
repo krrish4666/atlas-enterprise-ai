@@ -136,10 +136,21 @@ When `DELETE /api/documents/{document_id}` is called:
 - LangGraph invokes the Langfuse `CallbackHandler` asynchronously per request, attaching `session_id` and `trace_name="atlas-rag-query"`.
 - If `LANGFUSE_ENABLED=false` or Langfuse is unreachable, tracing degrades gracefully without failing user requests.
 
-### Automated Delivery (GitHub Actions -> `ghcr.io`)
-- On push to `main` (and pull requests):
-  1. Run `ruff check .`, `ruff format --check .`, and `pytest tests/ -v`.
-  2. On `main` merges only: build the production Docker image (`Dockerfile`) and push versioned tags (`latest` and `sha-<short>`) to `ghcr.io/<owner>/atlas-enterprise-ai` using `GITHUB_TOKEN`.
+### Automated Delivery & Dual-Profile Hosting (GitHub Actions -> `ghcr.io` -> Render)
+- On push to `main`/`master` (and pull requests):
+  1. **`verify`:** Run `ruff check .`, `ruff format --check .`, and `pytest tests/ -v`.
+  2. **`publish` (`main`/`master` pushes only):** Build `linux/amd64` production image (`Dockerfile`) and push lowercase `ghcr.io/<owner>/<repo>:latest` and `:<sha>` using `GITHUB_TOKEN`.
+  3. **`deploy` (when `RENDER_DEPLOY_HOOK_URL` secret is set):** Trigger Render deploy hook to roll out the new image.
+
+#### Dual-Profile Matrix (Zero-Cost Local Dev vs. 24/7 Cloud Demo)
+| Layer | Local Dev (`docker-compose.yml`) | 24/7 Cloud Demo (Render Free) |
+| :--- | :--- | :--- |
+| **App Runtime** | Local FastAPI container (`:8000`) | Render Free Web Service (image-backed `ghcr.io`, dynamic `$PORT`, HTTPS) |
+| **Database + Vectors** | Local `pgvector:pg16` container | Neon Free Postgres (`pgvector`, `sslmode=require`, `pool_recycle=300`) |
+| **Object Storage (S3)** | Local RustFS (`:9000`) | Backblaze B2 S3-compatible (`S3_REGION`, `S3_ADDRESSING_STYLE=path`, private bucket) |
+| **Embeddings (768-dim)** | `EMBED_PROVIDER=ollama` (`nomic-embed-text`) | `EMBED_PROVIDER=gemini` (`models/gemini-embedding-001`, `output_dimensionality=768`) |
+| **Chat LLM** | Gemini API (`gemini-3.5-flash-lite`) | Gemini API (`gemini-3.5-flash-lite`) |
+| **Observability** | Self-hosted Langfuse v2 (`:3000`) | Langfuse Cloud Free Hobby (`https://cloud.langfuse.com`) |
 
 ---
 

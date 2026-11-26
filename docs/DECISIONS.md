@@ -38,14 +38,14 @@ This document records the rationale behind every major technical choice in **Atl
 
 ---
 
-## ADR-004: Local Ollama `nomic-embed-text` for Embeddings (Instead of Bedrock Titan or Cloud APIs)
+## ADR-004: Pluggable 768-Dim Embeddings (`nomic-embed-text` Locally, `gemini-embedding-001` for 24/7 Cloud Demo)
 
-- **Status:** Accepted
-- **Context:** Chunking and embedding large PDFs generates many consecutive requests, which quickly hits free-tier cloud API rate limits or incurs per-token costs.
-- **Decision:** Run **Ollama** locally with `nomic-embed-text` (**768 dimensions**) for both document ingestion and query embedding.
+- **Status:** Accepted (Updated for Phase 6 Cloud Profile)
+- **Context:** Local development uses unlimited CPU-friendly native Ollama (`nomic-embed-text`, 768 dims). However, deploying a 24/7 live recruiter demo on free serverless PaaS platforms (Render Free Web Service) cannot run a host Ollama daemon without a paid always-on VM.
+- **Decision:** Keep **Ollama (`nomic-embed-text`)** as the default (`EMBED_PROVIDER=ollama`) for local Docker Compose dev, and support **Gemini Embeddings (`models/gemini-embedding-001` with `output_dimensionality=768`)** when `EMBED_PROVIDER=gemini` is configured for cloud deployments.
 - **Consequences:**
-  - Unlimited, zero-cost, CPU-friendly local embeddings with zero API rate-limit failures during bulk uploads.
-  - **Agent Rule:** Every vector column, index, and validation check must strictly enforce `768` dimensions. Never swap to OpenAI (`1536`) or Gemini (`768`/`3072`) embedding APIs.
+  - **Vector Contract Unchanged:** Both providers strictly enforce `768` dimensions into PostgreSQL `vector(768)`. Never mix vectors from different embedding models within the same database.
+  - Zero code changes needed to switch environments (`EMBED_PROVIDER=ollama` locally vs `EMBED_PROVIDER=gemini` on Render).
 
 ---
 

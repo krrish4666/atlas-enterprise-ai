@@ -145,15 +145,15 @@ This document is the living build tracker for **Atlas Enterprise AI**. AI coding
 
 **Goal:** Automate testing, harden Docker packaging, add production HTTPS reverse proxy + IP rate limiting, and publish/deploy to an Azure Ubuntu VM via GitHub Container Registry.
 
-- [x] Harden `Dockerfile` (`python:3.12-slim` multi-stage build, non-root `atlas` user, `HEALTHCHECK` hitting `/health`, proxy headers enabled) and expose `GET /health` alias in `app/main.py`.
-- [x] Create `docker-compose.prod.yml` pulling `ghcr.io/${GITHUB_REPOSITORY}:latest`, keeping `host.docker.internal:host-gateway` for native host Ollama, `restart: unless-stopped` on all services, and `caddy:2-alpine` (`Caddyfile`) for automatic HTTPS + RustFS presigned upload proxying.
+- [x] Harden `Dockerfile` (`python:3.12-slim` multi-stage build, non-root `atlas` user, dynamic `${PORT:-8000}` binding & `/health` check, proxy headers enabled) and expose `GET /health` alias in `app/main.py`.
+- [x] Support Dual-Profile Cloud Hosting (`Render Free` + `Neon Postgres` + `Backblaze B2` + `Gemini Embeddings @ 768d` + `Langfuse Cloud`) while preserving Local Docker Compose dev (`Ollama`, `RustFS`, local `pgvector`, `Langfuse v2`).
+- [x] Create `docker-compose.prod.yml` + `Caddyfile` and `scripts/setup_vm.sh` for optional self-hosted VM deployments.
 - [x] Add lightweight per-IP sliding-window rate limiting on `POST /api/chat` (`app/api/rate_limit.py`, configurable via `CHAT_RATE_LIMIT_PER_MINUTE`, default `20`).
-- [x] Complete `tests/test_api.py` covering `/health`, `/api/health`, `/api/chat` rate limiting (`429`), error cases (`400`, `403`, `404`), audit log filtering, and role enforcement.
-- [x] Create `.github/workflows/ci-cd.yml` (`verify` -> `publish` to `ghcr.io` -> `deploy` to Azure Ubuntu VM via `appleboy/ssh-action`).
-- [x] Create `scripts/setup_vm.sh` for Ubuntu 24.04 (Docker, Docker Compose v2, native Ollama with `OLLAMA_HOST=0.0.0.0:11434`, and `ollama pull nomic-embed-text`).
-- [x] Write root `README.md` with local quickstart, Azure VM deployment steps, and required GitHub Secrets (`AZURE_VM_HOST`, `AZURE_VM_USER`, `AZURE_VM_SSH_KEY`).
+- [x] Complete `tests/test_api.py` and `tests/test_ingestion.py` covering `/health`, `/api/health` (both `ollama` and `gemini` embed providers), `GeminiEmbedder` (`output_dimensionality=768`), S3 region/path-style config, rate limiting (`429`), error cases (`400`, `403`, `404`), and role enforcement.
+- [x] Create `.github/workflows/ci-cd.yml` (`verify` -> `publish` `linux/amd64` to `ghcr.io` -> `deploy` via `RENDER_DEPLOY_HOOK_URL`).
+- [x] Write root `README.md` with local quickstart, Render Free Tier deployment guide (`ghcr.io`, Neon, Backblaze B2 CORS, Langfuse Cloud), and Azure VM alternative.
 - [x] Verify all 8 Acceptance Criteria in `docs/SCOPE.md`.
 
 **Exit Gate:**
 - [x] Full test suite and `ruff` lint/format checks pass locally (`ruff check . && ruff format --check . && pytest tests/ -v`).
-- [ ] Pushing to `main`/`master` triggers GitHub Actions CI/CD to verify, publish to `ghcr.io`, and deploy when `AZURE_VM_HOST` is configured.
+- [x] Pushing to `main`/`master` triggers GitHub Actions CI/CD to verify, publish to `ghcr.io`, and trigger `RENDER_DEPLOY_HOOK_URL` when configured.

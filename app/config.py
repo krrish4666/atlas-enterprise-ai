@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     postgres_password: str = "atlaspassword"
     database_url: str = "postgresql+psycopg://atlas:atlaspassword@localhost:5432/atlas"
 
-    # ── RustFS (S3-compatible) ─────────────────────────────────────────────────
+    # ── S3 Object Storage (RustFS locally, Backblaze B2 in cloud) ──────────────
     # Internal: used by FastAPI inside Docker for reads/deletes/bucket init
     s3_endpoint_url: str = "http://rustfs:9000"
     # Public: used ONLY when signing presigned PUT URLs for the browser
@@ -34,11 +34,15 @@ class Settings(BaseSettings):
     s3_access_key: str = "minioadmin"
     s3_secret_key: str = "minioadmin"
     s3_bucket_name: str = "atlas-docs"
+    s3_region: str = "us-east-1"
+    s3_addressing_style: str = "path"
     s3_cors_origins: str = "http://localhost:8000,http://127.0.0.1:8000"
 
-    # ── Ollama (Local Embeddings) ──────────────────────────────────────────────
+    # ── Embeddings (Native Ollama locally, Gemini API in cloud) ────────────────
+    embed_provider: str = "ollama"
     ollama_base_url: str = "http://ollama:11434"
     embed_model: str = "nomic-embed-text"
+    gemini_embed_model: str = "models/gemini-embedding-001"
     embed_dim: int = 768
 
     # ── Google Gemini API ──────────────────────────────────────────────────────

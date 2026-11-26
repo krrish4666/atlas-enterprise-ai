@@ -44,7 +44,7 @@ USER atlas
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+    CMD ["sh", "-c", "python -c \"import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\\\"PORT\\\", \\\"8000\\\")}/health')\""]
 
-# Uvicorn behind reverse proxy (Caddy): honor forwarded headers for per-IP rate limiting
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Bind dynamic $PORT (Render sets PORT=10000; local defaults to 8000) and honor proxy headers
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --proxy-headers --forwarded-allow-ips '*'"]

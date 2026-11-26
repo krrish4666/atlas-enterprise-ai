@@ -139,6 +139,11 @@
   const statusRustfs = document.getElementById("status-rustfs");
   const statusOllama = document.getElementById("status-ollama");
   const statusLangfuse = document.getElementById("status-langfuse");
+  const embedModelLabel = document.getElementById("embed-model-label");
+  const embedEndpointLabel = document.getElementById("embed-endpoint-label");
+  const langfuseUiLink = document.getElementById("langfuse-ui-link");
+  const langfuseUiLabel = document.getElementById("langfuse-ui-label");
+  const langfuseModeLabel = document.getElementById("langfuse-mode-label");
 
   const auditEventFilter = document.getElementById("audit-event-filter");
   const auditLimitFilter = document.getElementById("audit-limit-filter");
@@ -237,15 +242,34 @@
     const isRustfsUp = services.rustfs === "up";
     setServicePill(statusRustfs, isRustfsUp);
 
-    // 4. Ollama Card
+    // 4. Embeddings Card (Ollama locally or Gemini API in cloud)
     const isOllamaUp = services.ollama === "up";
     setServicePill(statusOllama, isOllamaUp);
+    if (embedModelLabel && embedEndpointLabel) {
+      if (services.embed_provider === "gemini") {
+        embedModelLabel.textContent = "gemini-embedding-001";
+        embedEndpointLabel.textContent = "768d API";
+      } else {
+        embedModelLabel.textContent = "nomic-embed-text";
+        embedEndpointLabel.textContent = ":11434";
+      }
+    }
 
     // 5. Langfuse Card
     if (statusLangfuse) {
       const isLfEnabled = Boolean(services.langfuse_enabled);
       statusLangfuse.className = isLfEnabled ? "service-pill pill-emerald" : "service-pill pill-neutral";
       statusLangfuse.innerHTML = `<span class="status-dot ${isLfEnabled ? "dot-emerald" : "dot-neutral"}"></span><span class="status-text">${isLfEnabled ? "ACTIVE" : "DISABLED"}</span>`;
+    }
+    if (langfuseUiLink && services.langfuse_host) {
+      langfuseUiLink.href = services.langfuse_host;
+      const isLocal = services.langfuse_host.includes("localhost") || services.langfuse_host.includes("127.0.0.1");
+      if (langfuseUiLabel) {
+        langfuseUiLabel.textContent = isLocal ? "UI :3000" : "Langfuse Cloud";
+      }
+      if (langfuseModeLabel) {
+        langfuseModeLabel.textContent = isLocal ? "v2 Self-Hosted" : "Cloud Free";
+      }
     }
   }
 

@@ -390,8 +390,8 @@
               </span>
             </div>
             <div class="service-meta">
-              <span>nomic-embed-text</span>
-              <span class="meta-endpoint">:11434</span>
+              <span id="embed-model-label">nomic-embed-text</span>
+              <span class="meta-endpoint" id="embed-endpoint-label">:11434</span>
             </div>
           </div>
 
@@ -405,13 +405,13 @@
               </span>
             </div>
             <div class="service-meta">
-              <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="external-link" title="Open Langfuse Tracing Dashboard">
-                <span>UI :3000</span>
+              <a id="langfuse-ui-link" href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="external-link" title="Open Langfuse Tracing Dashboard">
+                <span id="langfuse-ui-label">Open Langfuse</span>
                 <svg class="external-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor">
                   <path d="M3.5 2.5h6v6M9.5 2.5l-6 6"/>
                 </svg>
               </a>
-              <span class="meta-endpoint">v2 Self-Hosted</span>
+              <span class="meta-endpoint" id="langfuse-mode-label">Observability</span>
             </div>
           </div>
         </div>
@@ -475,6 +475,6 @@
     </section>
   </main>
 
-  <script src="/app.js?v=2"></script>
+  <script src="/app.js?v=3"></script>
 </body>
 </html>

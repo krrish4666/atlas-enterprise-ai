@@ -1,7 +1,7 @@
 """app/api/routes_ops.py — Operational Health and Compliance Auditing Endpoints.
 
-Implements Section 3.D of docs/SCHEMA_AND_API.md and Phase 4 of docs/PLAN.md:
-- GET /api/health: Check connectivity to PostgreSQL, RustFS, Ollama, and Langfuse.
+Implements Section 3.D of docs/SCHEMA_AND_API.md and Phase 4/6:
+- GET /api/health: Check connectivity to PostgreSQL, S3 storage (RustFS/B2), Embeddings (Ollama/Gemini), and Langfuse.
 - GET /api/audit-logs: Filter and list operational audit records with pagination.
 """
 
@@ -13,7 +13,6 @@ from typing import Annotated, Any
 import boto3
 import httpx
 import psycopg
-from botocore.config import Config
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
@@ -22,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models import AuditLog
 from app.db.session import get_db
+from app.storage.s3_client import build_boto_config
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,9 @@ class HealthServices(BaseModel):
     postgres: str
     rustfs: str
     ollama: str
+    embed_provider: str = "ollama"
     langfuse_enabled: bool
+    langfuse_host: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -71,11 +73,11 @@ class AuditLogListResponse(BaseModel):
 
 
 async def check_postgres() -> bool:
-    """Check connectivity to PostgreSQL."""
+    """Check connectivity to PostgreSQL (5s timeout handles Neon cold-wake latency)."""
     try:
         conn = await psycopg.AsyncConnection.connect(
             settings.database_url.replace("+psycopg", ""),
-            connect_timeout=2,
+            connect_timeout=5,
         )
         await conn.execute("SELECT 1")
         await conn.close()
@@ -86,24 +88,25 @@ async def check_postgres() -> bool:
 
 
 def check_rustfs() -> bool:
-    """Check connectivity to RustFS."""
+    """Check connectivity to S3-compatible object storage (RustFS or Backblaze B2)."""
     try:
         s3 = boto3.client(
             "s3",
             endpoint_url=settings.s3_endpoint_url,
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key,
-            config=Config(connect_timeout=2, retries={"max_attempts": 0}),
+            region_name=settings.s3_region,
+            config=build_boto_config(connect_timeout=3, max_attempts=0),
         )
-        s3.list_buckets()
+        s3.head_bucket(Bucket=settings.s3_bucket_name)
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning("RustFS health check failed: %s", exc)
+        logger.warning("Object storage health check failed: %s", exc)
         return False
 
 
 async def check_ollama() -> bool:
-    """Check connectivity to Ollama."""
+    """Check connectivity to host Ollama."""
     try:
         async with httpx.AsyncClient(timeout=2) as client:
             resp = await client.get(f"{settings.ollama_base_url}/api/tags")
@@ -114,6 +117,23 @@ async def check_ollama() -> bool:
         return False
 
 
+def check_gemini_embeddings() -> bool:
+    """Validate Gemini embedding configuration without consuming free-tier quota."""
+    key = (settings.google_api_key or "").strip()
+    model = (settings.gemini_embed_model or "").strip()
+    return bool(key and key != "your_google_gemini_api_key_here" and model)
+
+
+def _resolve_public_langfuse_url() -> str | None:
+    """Return browser-accessible Langfuse URL when Langfuse is enabled."""
+    if not settings.langfuse_enabled:
+        return None
+    host = (settings.langfuse_host or "").strip().rstrip("/")
+    if not host or host.startswith("http://langfuse:"):
+        return "http://localhost:3000"
+    return host
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
@@ -121,22 +141,29 @@ async def check_ollama() -> bool:
     "/health",
     response_model=HealthResponse,
     status_code=status.HTTP_200_OK,
-    summary="Check connectivity to PostgreSQL, RustFS, and Ollama",
+    summary="Check connectivity to PostgreSQL, S3 storage, and Embeddings provider",
 )
 async def health_check() -> HealthResponse:
-    """Check connectivity to PostgreSQL, RustFS, and Ollama."""
+    """Check connectivity to PostgreSQL, S3 storage, and active embedding provider."""
     pg_ok = await check_postgres()
-    rustfs_ok = check_rustfs()
-    ollama_ok = await check_ollama()
+    storage_ok = check_rustfs()
+
+    provider = settings.embed_provider.strip().lower()
+    if provider == "gemini":
+        embed_ok = check_gemini_embeddings()
+    else:
+        embed_ok = await check_ollama()
 
     services = HealthServices(
         postgres="up" if pg_ok else "down",
-        rustfs="up" if rustfs_ok else "down",
-        ollama="up" if ollama_ok else "down",
+        rustfs="up" if storage_ok else "down",
+        ollama="up" if embed_ok else "down",
+        embed_provider=provider,
         langfuse_enabled=settings.langfuse_enabled,
+        langfuse_host=_resolve_public_langfuse_url(),
     )
 
-    all_up = pg_ok and rustfs_ok and ollama_ok
+    all_up = pg_ok and storage_ok and embed_ok
     overall = "ok" if all_up else "degraded"
 
     return HealthResponse(

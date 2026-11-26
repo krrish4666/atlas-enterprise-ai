@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from app.api.rate_limit import chat_rate_limiter
+from app.api.routes_ops import check_rustfs
 from app.config import settings
 from app.db.models import AuditLog
 from app.db.session import get_db
@@ -93,6 +94,72 @@ def test_health_response_schema_types(client: TestClient) -> None:
     assert body["status"] == "degraded"
     assert body["services"]["postgres"] == "up"
     assert body["services"]["ollama"] == "down"
+
+
+def test_health_with_gemini_embed_provider_and_langfuse_cloud(client: TestClient) -> None:
+    """GET /api/health checks Gemini config when EMBED_PROVIDER=gemini and returns Langfuse Cloud host."""
+    orig_provider = settings.embed_provider
+    orig_key = settings.google_api_key
+    orig_lf_enabled = settings.langfuse_enabled
+    orig_lf_host = settings.langfuse_host
+
+    settings.embed_provider = "gemini"
+    settings.google_api_key = "AIzaTestKeyForHealthCheck"
+    settings.langfuse_enabled = True
+    settings.langfuse_host = "https://cloud.langfuse.com"
+
+    try:
+        with (
+            patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock, return_value=True),
+            patch("app.api.routes_ops.check_rustfs", return_value=True),
+            patch("app.api.routes_ops.check_ollama", new_callable=AsyncMock) as mock_ollama,
+        ):
+            response = client.get("/api/health")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ok"
+        assert body["services"]["embed_provider"] == "gemini"
+        assert body["services"]["ollama"] == "up"
+        assert body["services"]["langfuse_host"] == "https://cloud.langfuse.com"
+        mock_ollama.assert_not_awaited()
+
+        # Missing Gemini API key marks embeddings down without crashing
+        settings.google_api_key = ""
+        with (
+            patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock, return_value=True),
+            patch("app.api.routes_ops.check_rustfs", return_value=True),
+        ):
+            degraded = client.get("/api/health")
+        assert degraded.status_code == 200
+        assert degraded.json()["status"] == "degraded"
+        assert degraded.json()["services"]["ollama"] == "down"
+    finally:
+        settings.embed_provider = orig_provider
+        settings.google_api_key = orig_key
+        settings.langfuse_enabled = orig_lf_enabled
+        settings.langfuse_host = orig_lf_host
+
+
+def test_health_maps_internal_langfuse_host_to_localhost(client: TestClient) -> None:
+    """Docker-internal http://langfuse:3000 maps to http://localhost:3000 for browser UI links."""
+    orig_lf_enabled = settings.langfuse_enabled
+    orig_lf_host = settings.langfuse_host
+    settings.langfuse_enabled = True
+    settings.langfuse_host = "http://langfuse:3000"
+
+    try:
+        with (
+            patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock, return_value=True),
+            patch("app.api.routes_ops.check_rustfs", return_value=True),
+            patch("app.api.routes_ops.check_ollama", new_callable=AsyncMock, return_value=True),
+        ):
+            resp = client.get("/api/health")
+        assert resp.status_code == 200
+        assert resp.json()["services"]["langfuse_host"] == "http://localhost:3000"
+    finally:
+        settings.langfuse_enabled = orig_lf_enabled
+        settings.langfuse_host = orig_lf_host
 
 
 def test_chat_rate_limit_blocks_excess_requests_per_ip(client: TestClient) -> None:
@@ -250,3 +317,18 @@ def test_list_audit_logs_with_filters(client: TestClient) -> None:
         assert body["audit_logs"][0]["session_id"] == "sess-ops"
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_check_rustfs_uses_head_bucket() -> None:
+    """check_rustfs calls head_bucket (not list_buckets) for bucket-scoped Backblaze B2 keys."""
+    mock_s3 = MagicMock()
+    with patch("app.api.routes_ops.boto3.client", return_value=mock_s3) as mock_boto:
+        assert check_rustfs() is True
+        mock_boto.assert_called_once()
+        mock_s3.head_bucket.assert_called_once_with(Bucket=settings.s3_bucket_name)
+        mock_s3.list_buckets.assert_not_called()
+
+    mock_s3_fail = MagicMock()
+    mock_s3_fail.head_bucket.side_effect = RuntimeError("Forbidden")
+    with patch("app.api.routes_ops.boto3.client", return_value=mock_s3_fail):
+        assert check_rustfs() is False

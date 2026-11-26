@@ -40,7 +40,7 @@ jobs:
           APP_ENV: test
         run: pytest tests/ -v
 
-  # ── Job 2: Build & Push Production Image to GHCR ────────────────────────────
+  # ── Job 2: Build & Push Production Image (linux/amd64) to GHCR ──────────────
   publish:
     name: Build & Publish to ghcr.io
     needs: verify
@@ -49,8 +49,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image_repo: ${{ steps.meta.outputs.image_repo }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -59,7 +57,6 @@ jobs:
         id: meta
         run: |
           REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "image_repo=${REPO_LOWER}" >> "$GITHUB_OUTPUT"
           echo "image_tag=${{ env.REGISTRY }}/${REPO_LOWER}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
@@ -77,6 +74,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          platforms: linux/amd64
           push: true
           tags: |
             ${{ steps.meta.outputs.image_tag }}:latest
@@ -84,43 +82,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Job 3: Deploy to Azure Ubuntu VM via SSH ────────────────────────────────
+  # ── Job 3: Trigger Render Deploy Hook ───────────────────────────────────────
   deploy:
-    name: Deploy to Azure Ubuntu VM
+    name: Deploy to Render
     needs: publish
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
     steps:
-      - name: Check Azure VM deployment secret
-        id: check-vm
+      - name: Trigger Render Deploy Hook
         env:
-          AZURE_VM_HOST: ${{ secrets.AZURE_VM_HOST }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          if [ -n "$AZURE_VM_HOST" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "AZURE_VM_HOST secret is not configured; skipping VM deployment."
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL secret is not set; skipping Render deploy trigger."
+            exit 0
           fi
-
-      - name: Pull latest image & restart stack on Azure VM
-        if: steps.check-vm.outputs.enabled == 'true'
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.AZURE_VM_HOST }}
-          username: ${{ secrets.AZURE_VM_USER }}
-          key: ${{ secrets.AZURE_VM_SSH_KEY }}
-          script: |
-            set -euo pipefail
-            cd /opt/atlas
-            if [ -d .git ]; then
-              git pull --ff-only origin "${{ github.ref_name }}" || true
-            fi
-            REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-            export GITHUB_REPOSITORY="${REPO_LOWER}"
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-            docker compose -f docker-compose.prod.yml pull api
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
-            docker image prune -f
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo ""
+          echo "Render deploy hook triggered successfully."

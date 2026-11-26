@@ -16,11 +16,12 @@ from app.config import settings
 # On Windows with older psycopg, WindowsSelectorEventLoopPolicy was sometimes used.
 # In Python 3.14, ProactorEventLoop is standard and required by AnyIO/Starlette.
 
-# Async engine for application queries
+# Async engine for application queries (pool_recycle prevents stale Neon SSL connections)
 engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
+    pool_recycle=300,
 )
 
 # Async session factory

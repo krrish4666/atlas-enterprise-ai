@@ -121,10 +121,36 @@ def test_s3_storage_initializes_two_endpoints() -> None:
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket_name="test-bucket",
+        region_name="us-west-004",
+        addressing_style="path",
     )
     assert storage.internal_endpoint == "http://rustfs:9000"
     assert storage.public_endpoint == "http://localhost:9000"
     assert storage.bucket_name == "test-bucket"
+    assert storage.region_name == "us-west-004"
+    assert storage.addressing_style == "path"
+    assert storage.internal_client.meta.region_name == "us-west-004"
+    assert storage.public_client.meta.config.s3["addressing_style"] == "path"
+    assert storage.public_client.meta.config.signature_version == "s3v4"
+
+
+def test_ensure_bucket_exists_skips_create_when_present() -> None:
+    """When head_bucket succeeds (e.g. pre-created Backblaze B2 bucket), create_bucket is skipped."""
+    storage = S3Storage(
+        internal_endpoint="https://s3.us-west-004.backblazeb2.com",
+        public_endpoint="https://s3.us-west-004.backblazeb2.com",
+        access_key="b2key",
+        secret_key="b2secret",
+        bucket_name="atlas-docs",
+        region_name="us-west-004",
+    )
+    with (
+        patch.object(storage.internal_client, "head_bucket") as mock_head,
+        patch.object(storage.internal_client, "create_bucket") as mock_create,
+    ):
+        storage.ensure_bucket_exists()
+        mock_head.assert_called_once_with(Bucket="atlas-docs")
+        mock_create.assert_not_called()
 
 
 def test_generate_presigned_put_url_uses_public_endpoint() -> None:

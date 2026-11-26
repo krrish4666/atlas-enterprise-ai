@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from app.db.models import Document
 from app.db.session import get_db
 from app.ingestion.chunker import Chunk, chunk_pages
-from app.ingestion.embedder import OllamaEmbedder
+from app.ingestion.embedder import GeminiEmbedder, OllamaEmbedder, get_embedder
 from app.ingestion.parser import ParsedPage, parse_document
 from app.main import app
 
@@ -180,6 +180,54 @@ async def test_embedder_empty_input_returns_empty_list() -> None:
     embedder = OllamaEmbedder()
     res = await embedder.embed_texts([])
     assert res == []
+
+
+@pytest.mark.asyncio
+async def test_gemini_embedder_enforces_768_dimensions() -> None:
+    """GeminiEmbedder passes output_dimensionality=768 and validates returned vectors."""
+    mock_client = MagicMock()
+    mock_client.aembed_documents = AsyncMock(return_value=[[0.02] * 768, [0.03] * 768])
+    mock_client.aembed_query = AsyncMock(return_value=[0.04] * 768)
+
+    emb = GeminiEmbedder(api_key="test-key", model="models/gemini-embedding-001")
+    with patch.object(emb, "_get_client", return_value=mock_client):
+        docs_res = await emb.embed_texts(["Chunk A", "Chunk B"], batch_size=16)
+        assert len(docs_res) == 2
+        assert len(docs_res[0]) == 768
+        mock_client.aembed_documents.assert_awaited_once_with(
+            ["Chunk A", "Chunk B"],
+            batch_size=16,
+            output_dimensionality=768,
+        )
+
+        q_res = await emb.embed_query("Search query")
+        assert len(q_res) == 768
+        mock_client.aembed_query.assert_awaited_once_with(
+            "Search query",
+            output_dimensionality=768,
+        )
+
+
+@pytest.mark.asyncio
+async def test_gemini_embedder_dimension_mismatch_raises_error() -> None:
+    """GeminiEmbedder raises ValueError if Gemini returns != 768 dimensions."""
+    mock_client = MagicMock()
+    mock_client.aembed_documents = AsyncMock(return_value=[[0.01] * 3072])
+
+    emb = GeminiEmbedder(api_key="test-key")
+    with (
+        patch.object(emb, "_get_client", return_value=mock_client),
+        pytest.raises(ValueError, match="Vector dimension mismatch"),
+    ):
+        await emb.embed_texts(["Oops"])
+
+
+def test_get_embedder_factory_selection() -> None:
+    """get_embedder returns OllamaEmbedder or GeminiEmbedder based on provider."""
+    assert isinstance(get_embedder("ollama"), OllamaEmbedder)
+    assert isinstance(get_embedder("gemini"), GeminiEmbedder)
+    with pytest.raises(ValueError, match="Unsupported EMBED_PROVIDER"):
+        get_embedder("openai")
 
 
 # ── 4. Document API Routes Tests ──────────────────────────────────────────────
