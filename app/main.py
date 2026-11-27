@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from app.config import settings
 
@@ -62,7 +63,6 @@ app = FastAPI(
 from app.api.routes_approvals import router as approvals_router  # noqa: E402
 from app.api.routes_chat import router as chat_router  # noqa: E402
 from app.api.routes_documents import router as documents_router  # noqa: E402
-from app.api.routes_ops import HealthResponse, health_check  # noqa: E402
 from app.api.routes_ops import router as ops_router  # noqa: E402
 
 app.include_router(documents_router)
@@ -71,10 +71,21 @@ app.include_router(approvals_router)
 app.include_router(ops_router)
 
 
-@app.get("/health", response_model=HealthResponse, tags=["ops"], summary="Root healthcheck alias")
-async def root_health_check() -> HealthResponse:
-    """Expose root /health endpoint for container healthchecks alongside /api/health."""
-    return await health_check()
+class LivenessResponse(BaseModel):
+    """Lightweight liveness probe payload."""
+
+    status: str = "ok"
+
+
+@app.get(
+    "/health",
+    response_model=LivenessResponse,
+    tags=["ops"],
+    summary="Zero-IO container liveness probe",
+)
+async def root_health_check() -> LivenessResponse:
+    """Return immediate HTTP 200 without probing external databases or object storage."""
+    return LivenessResponse(status="ok")
 
 
 # ── Static frontend (Phase 5 will populate frontend/) ─────────────────────────

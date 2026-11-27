@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from app.api.rate_limit import chat_rate_limiter
-from app.api.routes_ops import check_rustfs
+from app.api.routes_ops import check_rustfs, clear_s3_health_cache
 from app.config import settings
 from app.db.models import AuditLog
 from app.db.session import get_db
@@ -36,21 +36,64 @@ def test_health_returns_ok_when_services_up(client: TestClient) -> None:
     assert "langfuse_enabled" in body["services"]
 
 
-def test_root_health_alias_returns_ok(client: TestClient) -> None:
-    """GET /health returns 200 OK for Docker/load-balancer healthchecks."""
+def test_root_health_liveness_makes_zero_external_calls(client: TestClient) -> None:
+    """GET /health returns 200 {'status': 'ok'} without probing Postgres, S3, or Ollama."""
     with (
         patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock) as mock_pg,
         patch("app.api.routes_ops.check_rustfs") as mock_rustfs,
         patch("app.api.routes_ops.check_ollama", new_callable=AsyncMock) as mock_ollama,
     ):
-        mock_pg.return_value = True
-        mock_rustfs.return_value = True
-        mock_ollama.return_value = True
-
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.json() == {"status": "ok"}
+    mock_pg.assert_not_awaited()
+    mock_rustfs.assert_not_called()
+    mock_ollama.assert_not_awaited()
+
+
+def test_api_health_caches_rustfs_status_within_ttl(client: TestClient) -> None:
+    """GET /api/health caches check_rustfs() for 300s when up and 60s when down."""
+    clear_s3_health_cache()
+
+    with (
+        patch("app.api.routes_ops.time.monotonic") as mock_time,
+        patch("app.api.routes_ops.check_postgres", new_callable=AsyncMock, return_value=True),
+        patch("app.api.routes_ops.check_ollama", new_callable=AsyncMock, return_value=True),
+        patch("app.api.routes_ops.check_rustfs", side_effect=[True, False, True]) as mock_rustfs,
+    ):
+        # 1. Cold cache (t=1000) -> probes check_rustfs() -> True (up)
+        mock_time.return_value = 1000.0
+        r1 = client.get("/api/health")
+        assert r1.status_code == 200
+        assert r1.json()["services"]["rustfs"] == "up"
+        assert mock_rustfs.call_count == 1
+
+        # 2. Within 300s up TTL (t=1299) -> returns cached 'up' without S3 head_bucket
+        mock_time.return_value = 1299.0
+        r2 = client.get("/api/health")
+        assert r2.json()["services"]["rustfs"] == "up"
+        assert mock_rustfs.call_count == 1
+
+        # 3. Past 300s up TTL (t=1301) -> re-probes -> returns False (down)
+        mock_time.return_value = 1301.0
+        r3 = client.get("/api/health")
+        assert r3.json()["status"] == "degraded"
+        assert r3.json()["services"]["rustfs"] == "down"
+        assert mock_rustfs.call_count == 2
+
+        # 4. Within 60s down retry TTL (t=1350) -> returns cached 'down'
+        mock_time.return_value = 1350.0
+        r4 = client.get("/api/health")
+        assert r4.json()["services"]["rustfs"] == "down"
+        assert mock_rustfs.call_count == 2
+
+        # 5. Past 60s down retry TTL (t=1362) -> retries and recovers to 'up'
+        mock_time.return_value = 1362.0
+        r5 = client.get("/api/health")
+        assert r5.json()["status"] == "ok"
+        assert r5.json()["services"]["rustfs"] == "up"
+        assert mock_rustfs.call_count == 3
 
 
 def test_health_returns_degraded_when_services_down(client: TestClient) -> None:

@@ -6,6 +6,7 @@ Implements Section 3.D of docs/SCHEMA_AND_API.md and Phase 4/6:
 """
 
 import logging
+import time
 import uuid
 from datetime import datetime
 from typing import Annotated, Any
@@ -72,6 +73,16 @@ class AuditLogListResponse(BaseModel):
 
 # ── Health Check Helpers ──────────────────────────────────────────────────────
 
+S3_HEALTH_CACHE_TTL_UP_SECONDS = 300.0
+S3_HEALTH_CACHE_TTL_DOWN_SECONDS = 60.0
+_s3_health_cache: dict[str, Any] = {"ok": None, "checked_at": 0.0}
+
+
+def clear_s3_health_cache() -> None:
+    """Reset the in-memory S3 health check cache."""
+    _s3_health_cache["ok"] = None
+    _s3_health_cache["checked_at"] = 0.0
+
 
 async def check_postgres() -> bool:
     """Check connectivity to PostgreSQL (5s timeout handles Neon cold-wake latency)."""
@@ -104,6 +115,21 @@ def check_rustfs() -> bool:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Object storage health check failed: %s", exc)
         return False
+
+
+def get_cached_rustfs_health() -> bool:
+    """Return cached S3 health status within TTL (300s when up, 60s when down)."""
+    now = time.monotonic()
+    cached_ok = _s3_health_cache["ok"]
+    if cached_ok is not None:
+        ttl = S3_HEALTH_CACHE_TTL_UP_SECONDS if cached_ok else S3_HEALTH_CACHE_TTL_DOWN_SECONDS
+        if (now - _s3_health_cache["checked_at"]) < ttl:
+            return bool(cached_ok)
+
+    storage_ok = check_rustfs()
+    _s3_health_cache["ok"] = storage_ok
+    _s3_health_cache["checked_at"] = now
+    return storage_ok
 
 
 async def check_ollama() -> bool:
@@ -157,7 +183,7 @@ def _resolve_public_langfuse_url() -> str | None:
 async def health_check() -> HealthResponse:
     """Check connectivity to PostgreSQL, S3 storage, and active embedding provider."""
     pg_ok = await check_postgres()
-    storage_ok = check_rustfs()
+    storage_ok = get_cached_rustfs_health()
 
     provider = settings.embed_provider.strip().lower()
     if provider == "gemini":
